@@ -9,7 +9,8 @@ import {
   Package, 
   Store, 
   ArrowLeftRight, 
-  LogOut 
+  LogOut,
+  ReceiptText
 } from 'lucide-react';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -45,6 +46,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: 'Master Inventory', href: '/inventory', icon: Package },
     { name: 'Manajemen Cabang', href: '/branches', icon: Store },
     { name: 'Transfer Stok', href: '/transfers', icon: ArrowLeftRight },
+    { name: 'Laporan Transaksi', href: '/transactions', icon: ReceiptText },
   ];
 
   return (
