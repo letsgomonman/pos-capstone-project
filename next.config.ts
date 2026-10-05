@@ -1,8 +1,19 @@
+import withSerwistInit from "@serwist/next";
 import type { NextConfig } from "next";
 
+// Inisialisasi Serwist untuk PWA
+const withSerwist = withSerwistInit({
+  swSrc: "src/app/sw.ts",
+  swDest: "public/sw.js",
+  disable: process.env.NODE_ENV === "development",
+});
+
+// Konfigurasi standar Next.js
 const nextConfig: NextConfig = {
-  /* config options here */
-  reactCompiler: true,
+  reactStrictMode: true,
+  turbopack: {},
+  // Tambahkan konfigurasi Next.js lain di sini jika diperlukan nanti
 };
 
-export default nextConfig;
+// Bungkus nextConfig dengan withSerwist
+export default withSerwist(nextConfig);
