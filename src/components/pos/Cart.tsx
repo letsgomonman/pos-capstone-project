@@ -5,21 +5,27 @@ import { processCheckout } from '@/lib/checkout';
 import { generateReceiptPDF } from '@/lib/pdf-generator';
 import { sendWhatsAppReceipt } from '@/lib/whatsapp';
 import { useState } from 'react';
+import { useSession } from '@/hooks/useSession';
 
 export default function CartPanel() {
   const { items, getTotal, clearCart, updateQuantity, removeItem } = useCartStore();
   
+  const { session } = useSession();
   const [isProcessing, setIsProcessing] = useState(false); 
   const [customerPhone, setCustomerPhone] = useState('');
   const [lastTx, setLastTx] = useState<{ id: string, amount: number, items: CartItem[] } | null>(null);
 
   const handlePayment = async (paymentMethod: string) => {
     if (items.length === 0) return;
+    if (!session) {
+      alert("Sesi tidak valid, harap login ulang.");
+      return;
+    }
     setIsProcessing(true); 
 
-    const tenantId = "UUID_TENANT"; 
-    const branchId = "UUID_BRANCH";
-    const cashierId = "UUID_CASHIER";
+    const tenantId = session.tenantId; 
+    const branchId = session.branchId;
+    const cashierId = session.userId;
     const currentTotal = getTotal();
 
     const result = await processCheckout({
