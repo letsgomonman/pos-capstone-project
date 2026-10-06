@@ -1,39 +1,44 @@
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { create } from 'zustand';
 
 export interface SessionData {
   userId: string;
+  name: string;
+  role: string;
   tenantId: string;
   branchId: string;
-  role: string;
-  name: string;
 }
 
-export function useSession() {
-  const [session, setSession] = useState<SessionData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const router = useRouter();
+interface SessionStore {
+  session: SessionData | null;
+  isLoading: boolean;
+  login: (data: SessionData) => void;
+  logout: () => void;
+  initializeSession: () => void;
+}
 
-  useEffect(() => {
-    // Membungkus logika dalam fungsi async agar dieksekusi sebagai microtask
-    // Ini menyelesaikan peringatan ESLint 'set-state-in-effect'
-    const initializeSession = async () => {
-      if (typeof window !== 'undefined') {
-        const storedSession = localStorage.getItem('pos_session');
-        
-        if (storedSession) {
-          setSession(JSON.parse(storedSession));
-        } else {
-          // Jika tidak ada sesi, paksa kembali ke login
-          router.push('/login');
+export const useSession = create<SessionStore>((set) => ({
+  session: null,
+  isLoading: true, // Kunci utama: Tahan UI agar Layout menunggu pembacaan memori
+  login: (data) => {
+    localStorage.setItem('pos_session', JSON.stringify(data));
+    set({ session: data, isLoading: false });
+  },
+  logout: () => {
+    localStorage.removeItem('pos_session');
+    set({ session: null, isLoading: false });
+  },
+  initializeSession: () => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('pos_session');
+      if (stored) {
+        try {
+          set({ session: JSON.parse(stored), isLoading: false });
+          return;
+        } catch (e) {
+          console.error("Gagal membaca sesi lokal");
         }
-        
-        setIsLoading(false);
       }
-    };
-
-    initializeSession();
-  }, [router]);
-
-  return { session, isLoading };
-}
+      set({ session: null, isLoading: false });
+    }
+  }
+}));

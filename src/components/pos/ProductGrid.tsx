@@ -6,7 +6,6 @@ import { useCartStore } from '@/hooks/useCartStore';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/hooks/useSession';
 
-// PERBAIKAN 1: Mendefinisikan tipe kembalian (response) spesifik dari Supabase JOIN
 interface SupabaseJoinResponse {
   stock_qty: number;
   branch_price: number;
@@ -21,9 +20,11 @@ export default function ProductGrid() {
   const [products, setProducts] = useState<LocalProduct[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  
+  // PERBAIKAN 1: Ambil juga 'items' dari keranjang untuk mengecek jumlah saat ini
   const addItem = useCartStore(state => state.addItem);
+  const items = useCartStore(state => state.items);
 
-  // --- SETUP ID ---
   const { session, isLoading: isSessionLoading } = useSession();
   const branchId = session?.branchId || ""; 
 
@@ -50,7 +51,6 @@ export default function ProductGrid() {
             .eq('branch_id', branchId);
 
           if (!error && inventoryData) {
-            // PERBAIKAN 2: Gunakan Interface yang sudah dibuat alih-alih tipe 'any'
             const formattedProducts: LocalProduct[] = (inventoryData as unknown as SupabaseJoinResponse[]).map((item) => ({
               id: item.products.id,
               sku: item.products.sku,
@@ -75,12 +75,31 @@ export default function ProductGrid() {
     };
     
     fetchMasterData();
-  }, [branchId]); 
+  }, [branchId, isSessionLoading]); 
 
   const filteredProducts = products.filter(p => 
     p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
     p.sku.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // PERBAIKAN 2: Fungsi validasi klik produk
+  const handleProductClick = (product: LocalProduct) => {
+    // A. Cek jika stok awal di database sudah habis (0)
+    if (product.stock_qty <= 0) {
+      alert(`Maaf, stok ${product.name} sedang habis!`);
+      return;
+    }
+
+    // B. Cek apakah barang ini sudah ada di keranjang, dan apakah klik ini akan melebihi stok
+    const existingItem = items.find(item => item.id === product.id);
+    if (existingItem && existingItem.cartQty >= product.stock_qty) {
+      alert(`Batas maksimal! Sisa stok ${product.name} hanya tinggal ${product.stock_qty}.`);
+      return;
+    }
+
+    // C. Jika aman dari limit, masukkan ke keranjang
+    addItem(product);
+  };
 
   return (
     <div className="flex flex-col h-full bg-white p-6">
@@ -101,27 +120,39 @@ export default function ProductGrid() {
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {filteredProducts.map(product => (
-              <button
-                key={product.id}
-                onClick={() => addItem(product)}
-                className="flex flex-col text-left border rounded-xl p-4 hover:border-blue-500 hover:shadow-md transition active:scale-95 bg-white text-gray-900"
-              >
-                <span className="text-xs text-gray-400 mb-1">{product.sku}</span>
-                {/* PERBAIKAN 3: Tailwind min-h-[3rem] diganti ke min-h-12 sesuai saran */}
-                <span className="font-semibold text-gray-800 line-clamp-2 min-h-12">
-                  {product.name}
-                </span>
-                <div className="mt-auto pt-2 flex justify-between items-center w-full">
-                  <span className="text-blue-600 font-bold">
-                    Rp {product.branch_price.toLocaleString('id-ID')}
+            {filteredProducts.map(product => {
+              // KALKULASI STOK DINAMIS
+              const cartItem = items.find(i => i.id === product.id);
+              const currentCartQty = cartItem ? cartItem.cartQty : 0;
+              const remainingStock = product.stock_qty - currentCartQty;
+              const isOutOfStock = remainingStock <= 0;
+
+              return (
+                <button
+                  key={product.id}
+                  onClick={() => handleProductClick(product)}
+                  disabled={isOutOfStock}
+                  className={`flex flex-col text-left border rounded-xl p-4 transition bg-white text-gray-900 ${
+                    isOutOfStock 
+                      ? 'opacity-50 cursor-not-allowed border-gray-200 bg-gray-50' 
+                      : 'hover:border-blue-500 hover:shadow-md active:scale-95'
+                  }`}
+                >
+                  <span className="text-xs text-gray-400 mb-1">{product.sku}</span>
+                  <span className="font-semibold text-gray-800 line-clamp-2 min-h-12">
+                    {product.name}
                   </span>
-                  <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
-                    Stok: {product.stock_qty}
-                  </span>
-                </div>
-              </button>
-            ))}
+                  <div className="mt-auto pt-2 flex justify-between items-center w-full">
+                    <span className="text-blue-600 font-bold">
+                      Rp {product.branch_price.toLocaleString('id-ID')}
+                    </span>
+                    <span className={`text-xs px-2 py-1 rounded font-medium ${isOutOfStock ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
+                      Sisa Stok: {remainingStock}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
         

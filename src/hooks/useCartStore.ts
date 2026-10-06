@@ -1,17 +1,21 @@
 import { create } from 'zustand';
 import { LocalProduct } from '@/lib/dexie';
 
-// Extend tipe produk dari Dexie untuk menambahkan qty di keranjang
-export interface CartItem extends LocalProduct {
+export interface CartItem {
+  id: string;
+  sku: string;
+  name: string;
+  branch_price: number; // Hanya gunakan harga jual cabang
   cartQty: number;
   subtotal: number;
+  stock_qty: number;
 }
 
 interface CartState {
   items: CartItem[];
   addItem: (product: LocalProduct) => void;
-  removeItem: (productId: string) => void;
-  updateQuantity: (productId: string, qty: number) => void;
+  updateQuantity: (id: string, qty: number) => void;
+  removeItem: (id: string) => void;
   clearCart: () => void;
   getTotal: () => number;
 }
@@ -19,39 +23,46 @@ interface CartState {
 export const useCartStore = create<CartState>((set, get) => ({
   items: [],
   
-  addItem: (product) => set((state) => {
-    const existingItem = state.items.find(item => item.id === product.id);
+  addItem: (product: LocalProduct) => set((state) => {
+    const existingItem = state.items.find(i => i.id === product.id);
+    
     if (existingItem) {
-      // Jika barang sudah ada, tambah qty saja
       return {
-        items: state.items.map(item => 
-          item.id === product.id 
-            ? { ...item, cartQty: item.cartQty + 1, subtotal: (item.cartQty + 1) * item.branch_price }
-            : item
+        items: state.items.map(i => i.id === product.id 
+          ? { ...i, cartQty: i.cartQty + 1, subtotal: (i.cartQty + 1) * i.branch_price } 
+          : i
         )
       };
     }
-    // Jika barang baru
-    return { 
-      items: [...state.items, { ...product, cartQty: 1, subtotal: product.branch_price }] 
+    
+    return {
+      items: [...state.items, {
+        id: product.id,
+        sku: product.sku,
+        name: product.name,
+        branch_price: product.branch_price,
+        cartQty: 1,
+        subtotal: product.branch_price,
+        stock_qty: product.stock_qty
+      }]
     };
   }),
 
-  removeItem: (productId) => set((state) => ({
-    items: state.items.filter(item => item.id !== productId)
-  })),
-
-  updateQuantity: (productId, qty) => set((state) => ({
+  updateQuantity: (id: string, qty: number) => set((state) => ({
     items: state.items.map(item =>
-      item.id === productId
+      item.id === id
         ? { ...item, cartQty: qty, subtotal: qty * item.branch_price }
         : item
-    )
+    ),
+  })),
+
+  removeItem: (id: string) => set((state) => ({
+    items: state.items.filter(item => item.id !== id),
   })),
 
   clearCart: () => set({ items: [] }),
 
   getTotal: () => {
     return get().items.reduce((total, item) => total + item.subtotal, 0);
-  }
+  },
 }));

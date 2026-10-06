@@ -2,102 +2,113 @@ import { db } from './dexie';
 import { supabase } from './supabase';
 import { CartItem } from '@/hooks/useCartStore';
 
-interface CheckoutParams {
+interface CheckoutPayload {
   items: CartItem[];
   totalAmount: number;
   paymentMethod: string;
   tenantId: string;
   branchId: string;
   cashierId: string;
+  customerName?: string;
+  customerPhone?: string;
+  discountAmount: number; // <--- BARU
+  orderNote: string;
 }
 
-export async function processCheckout({
-  items,
-  totalAmount,
-  paymentMethod,
-  tenantId,
-  branchId,
-  cashierId
-}: CheckoutParams): Promise<{ success: boolean; offlineId: string }> {
-  
-  // 1. Generate UUID v4 yang sama untuk Lokal dan Cloud
-  const offlineId = crypto.randomUUID();
-  const now = new Date().toISOString();
+export async function processCheckout(payload: CheckoutPayload) {
+  const offlineId = `TX-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  let customerId = null;
 
-  const localTx = {
-    offline_id: offlineId,
-    tenant_id: tenantId,    // BARU (Wajib untuk DB Cloud)
-    branch_id: branchId,    // BARU (Wajib untuk DB Cloud)
-    cashier_id: cashierId,  // BARU (Wajib untuk DB Cloud)
-    total_amount: totalAmount,
-    payment_method: paymentMethod,
-    is_synced: 0,
-    created_at: now
-  };
+  try {
+    // --- 1. CRM & ML-READY LOGIC (RFM Analysis) ---
+    // Hanya proses CRM jika Kasir sedang online dan No. HP diisi
+    if (navigator.onLine && payload.customerPhone) {
+      const { data: existingCust } = await supabase
+        .from('customers')
+        .select('id, total_orders, total_spend')
+        .eq('phone', payload.customerPhone)
+        .eq('tenant_id', payload.tenantId)
+        .single();
 
-  const localItems = items.map(item => ({
-    id: crypto.randomUUID(),
-    transaction_id: offlineId,
-    product_id: item.id,
-    qty: item.cartQty,
-    unit_price: item.branch_price,
-    subtotal: item.subtotal
-  }));
+      if (existingCust) {
+        // Pelanggan Lama: Update RFM Metrics
+        customerId = existingCust.id;
+        await supabase.from('customers')
+          .update({
+            total_orders: existingCust.total_orders + 1,
+            total_spend: Number(existingCust.total_spend) + payload.totalAmount,
+            last_purchase_date: new Date().toISOString()
+          })
+          .eq('id', customerId);
+      } else {
+        // Pelanggan Baru: Insert Data
+        const { data: newCust } = await supabase
+          .from('customers')
+          .insert({
+            tenant_id: payload.tenantId,
+            name: payload.customerName || 'Pelanggan Member',
+            phone: payload.customerPhone,
+            total_orders: 1,
+            total_spend: payload.totalAmount,
+            last_purchase_date: new Date().toISOString()
+          })
+          .select().single();
+        
+        if (newCust) customerId = newCust.id;
+      }
+    }
 
-  // 2. Cek apakah device terhubung ke internet
-  if (navigator.onLine) {
-    try {
-      // BISA DIBUAT API ROUTE: Lebih aman jika Supabase dipanggil via Next.js API Route (/api/v1/transactions)
-      // Di sini kita contohkan insert langsung dengan asumsi Row Level Security (RLS) sudah diatur.
-      
-      const { error: txError } = await supabase
-        .from('transactions')
-        .insert({
+    // --- 2. SIMPAN KE LOKAL (Offline-First) ---
+        await db.transactions.add({
           offline_id: offlineId,
-          tenant_id: tenantId,
-          branch_id: branchId,
-          cashier_id: cashierId,
-          total_amount: totalAmount,
-          payment_method: paymentMethod,
-          is_synced: true // Langsung true karena berhasil ke cloud
+          tenant_id: payload.tenantId,     // <--- Tambahkan ini
+          branch_id: payload.branchId,     // <--- Tambahkan ini
+          cashier_id: payload.cashierId,   // <--- Tambahkan ini
+          total_amount: payload.totalAmount,
+          discount_amount: payload.discountAmount, // <--- Data dimasukkan
+          order_note: payload.orderNote,
+          payment_method: payload.paymentMethod,
+          is_synced: 0,
+          created_at: new Date().toISOString(),
         });
 
-      if (txError) throw txError;
+    // --- 3. SIMPAN KE CLOUD (Jika Online) ---
+    if (navigator.onLine) {
+       const { data: tx, error: txErr } = await supabase
+         .from('transactions')
+         .insert({
+           offline_id: offlineId,
+           tenant_id: payload.tenantId,
+           branch_id: payload.branchId,
+           cashier_id: payload.cashierId,
+           customer_id: customerId, // Tautkan transaksi dengan Pelanggan!
+           total_amount: payload.totalAmount,
+           discount_amount: payload.discountAmount, // <--- BARU
+           order_note: payload.orderNote,
+           payment_method: payload.paymentMethod,
+           is_synced: true
+         })
+         .select().single();
 
-      // Insert detail barang (Basket Logging / ML Ready)
-      const cloudItems = items.map(item => ({
-        transaction_id: offlineId, // Perlu dicocokkan dengan ID transaksi yang baru di-insert
-        product_id: item.id,
-        qty: item.cartQty,
-        unit_price: item.branch_price,
-        subtotal: item.subtotal
-      }));
+       if (txErr) throw txErr;
 
-      const { error: itemError } = await supabase
-        .from('transaction_items')
-        .insert(cloudItems);
+       const txItems = payload.items.map(item => ({
+         transaction_id: tx.id,
+         product_id: item.id,
+         qty: item.cartQty,
+         unit_price: item.branch_price,
+         subtotal: item.subtotal
+       }));
 
-      if (itemError) throw itemError;
-
-      return { success: true, offlineId };
-
-    } catch (error) {
-      console.warn("Koneksi online gagal, masuk ke mode offline fallback.", error);
-      // JANGAN RETURN ERROR! Biarkan kode lanjut ke blok IndexedDB (Offline) di bawah
+       await supabase.from('transaction_items').insert(txItems);
+       
+       // Tandai lokal sudah tersinkronisasi
+       await db.transactions.where('offline_id').equals(offlineId).modify({ is_synced: 1 });
     }
-  }
 
-  // 3. OFFLINE FALLBACK: Simpan ke IndexedDB (Dexie) jika tidak ada internet atau Supabase gagal
-  try {
-    await db.transaction('rw', db.transactions, db.transaction_items, async () => {
-      await db.transactions.add(localTx);
-      await db.transaction_items.bulkAdd(localItems);
-    });
-    
-    console.log("Tersimpan di antrean offline (Dexie)");
     return { success: true, offlineId };
   } catch (error) {
-    console.error("Gagal menyimpan ke database lokal", error);
-    return { success: false, offlineId: '' };
+    console.error("Checkout Error:", error);
+    return { success: false, offlineId };
   }
 }

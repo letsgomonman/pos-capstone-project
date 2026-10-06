@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useSession } from '@/hooks/useSession';
 import { Search, Plus, Edit2, X, Box } from 'lucide-react';
 
+// PERBAIKAN 1: Tambahkan 'category' ke dalam interface products
 interface InventoryItem {
   id: string; 
   stock_qty: number;
@@ -14,6 +15,7 @@ interface InventoryItem {
     sku: string;
     name: string;
     base_price: number;
+    category: string; 
   };
 }
 
@@ -27,28 +29,41 @@ export default function InventoryPage() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  const [newSku, setNewSku] = useState('');
+  // State Form Tambah
   const [newName, setNewName] = useState('');
+  const [newCategory, setNewCategory] = useState('');
   const [newPrice, setNewPrice] = useState<number | string>('');
   const [newStock, setNewStock] = useState<number | string>('');
-
+  
+  // State Form Edit
   const [editId, setEditId] = useState('');
+  const [editProductId, setEditProductId] = useState(''); // Untuk update kategori di tabel products
   const [editName, setEditName] = useState('');
+  const [editCategory, setEditCategory] = useState('');
   const [editPrice, setEditPrice] = useState<number | string>('');
   const [editStock, setEditStock] = useState<number | string>('');
+
+  // PERBAIKAN 2: Mengambil kategori unik dengan aman dari state 'inventory'
+  const uniqueCategories: string[] = Array.from(
+    new Set(
+      inventory
+        .map((item) => item.products?.category)
+        .filter((cat): cat is string => typeof cat === 'string' && cat.trim() !== '')
+    )
+  );
+
   const fetchInventory = async () => {
     if (!session?.branchId) return;
     
-    // PERBAIKAN 1: Menghapus setIsLoading(true) di sini untuk mencegah cascading renders
-    // dan membuat pembaruan tabel setelah Add/Edit menjadi mulus tanpa berkedip.
     try {
+      // PERBAIKAN 3: Tarik juga kolom 'category' dari relasi products
       const { data, error } = await supabase
         .from('branch_inventory')
         .select(`
           id,
           stock_qty,
           branch_price,
-          products ( id, sku, name, base_price )
+          products ( id, sku, name, base_price, category ) 
         `)
         .eq('branch_id', session.branchId)
         .order('updated_at', { ascending: false });
@@ -63,13 +78,11 @@ export default function InventoryPage() {
   };
 
   useEffect(() => {
-    // PERBAIKAN 2: Membungkus pemanggilan fetch dalam fungsi async
     const initializeData = async () => {
       if (session?.branchId) {
         await fetchInventory();
       }
     };
-
     initializeData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.branchId]);
@@ -80,12 +93,14 @@ export default function InventoryPage() {
     setIsSaving(true);
 
     try {
+      const autoSku = `SKU-${Date.now().toString().slice(-6)}`;
       const { data: productData, error: pErr } = await supabase
         .from('products')
         .insert({
           tenant_id: session.tenantId,
-          sku: newSku,
+          sku: autoSku,
           name: newName,
+          category: newCategory || 'Umum',
           base_price: newPrice
         })
         .select().single();
@@ -104,9 +119,8 @@ export default function InventoryPage() {
       if (invErr) throw invErr;
 
       setIsAddOpen(false);
-      setNewSku(''); setNewName(''); setNewPrice(0); setNewStock(0);
+      setNewName(''); setNewCategory(''); setNewPrice(''); setNewStock('');
       
-      // Ambil data terbaru di belakang layar tanpa loading spinner
       fetchInventory();
 
     } catch (error: unknown) {
@@ -121,7 +135,8 @@ export default function InventoryPage() {
     e.preventDefault();
     setIsSaving(true);
     try {
-      const { error } = await supabase
+      // 1. Update Stok dan Harga di branch_inventory
+      const { error: invError } = await supabase
         .from('branch_inventory')
         .update({
           stock_qty: editStock,
@@ -130,12 +145,19 @@ export default function InventoryPage() {
         })
         .eq('id', editId);
 
-      if (error) throw error;
+      if (invError) throw invError;
+
+      // 2. Update Kategori di tabel master products
+      const { error: prodError } = await supabase
+        .from('products')
+        .update({ category: editCategory || 'Umum' })
+        .eq('id', editProductId);
+
+      if (prodError) throw prodError;
       
       setIsEditOpen(false);
       fetchInventory();
     } catch (error: unknown) {
-      // PERBAIKAN 3: Memanfaatkan variabel error yang dilempar agar tidak memicu peringatan no-unused-vars
       console.error("Gagal memperbarui inventaris:", error);
       alert('Gagal memperbarui data. Cek console log.');
     } finally {
@@ -145,7 +167,9 @@ export default function InventoryPage() {
 
   const openEditModal = (item: InventoryItem) => {
     setEditId(item.id);
+    setEditProductId(item.products.id);
     setEditName(item.products.name);
+    setEditCategory(item.products.category || ''); // Mengisi kategori saat ini
     setEditPrice(item.branch_price);
     setEditStock(item.stock_qty);
     setIsEditOpen(true);
@@ -153,7 +177,8 @@ export default function InventoryPage() {
 
   const filteredInventory = inventory.filter(item => 
     item.products.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    item.products.sku.toLowerCase().includes(searchQuery.toLowerCase())
+    item.products.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (item.products.category && item.products.category.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   return (
@@ -177,7 +202,7 @@ export default function InventoryPage() {
         <Search className="text-gray-400" size={20} />
         <input 
           type="text" 
-          placeholder="Cari berdasarkan nama atau SKU..." 
+          placeholder="Cari berdasarkan nama, SKU, atau kategori..." 
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full focus:outline-none text-gray-900 bg-transparent"
@@ -191,6 +216,7 @@ export default function InventoryPage() {
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200 text-gray-600 text-sm uppercase tracking-wider">
                 <th className="p-4 font-semibold">SKU</th>
+                <th className="p-4 font-semibold">Kategori</th>
                 <th className="p-4 font-semibold">Nama Produk</th>
                 <th className="p-4 font-semibold">Harga Cabang</th>
                 <th className="p-4 font-semibold">Stok Saat Ini</th>
@@ -200,11 +226,11 @@ export default function InventoryPage() {
             <tbody className="divide-y divide-gray-200">
               {isLoading ? (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-gray-500">Memuat data inventory...</td>
+                  <td colSpan={6} className="p-8 text-center text-gray-500">Memuat data inventory...</td>
                 </tr>
               ) : filteredInventory.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-gray-500 flex flex-col items-center">
+                  <td colSpan={6} className="p-8 text-center text-gray-500 flex flex-col items-center">
                     <Box size={32} className="mb-2 text-gray-300" />
                     Produk tidak ditemukan.
                   </td>
@@ -213,6 +239,11 @@ export default function InventoryPage() {
                 filteredInventory.map((item) => (
                   <tr key={item.id} className="hover:bg-gray-50 transition">
                     <td className="p-4 text-gray-500 font-mono text-sm">{item.products.sku}</td>
+                    <td className="p-4 text-sm text-gray-900">
+                      <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-md font-medium">
+                        {item.products.category || 'Umum'}
+                      </span>
+                    </td>
                     <td className="p-4 font-medium text-gray-900">{item.products.name}</td>
                     <td className="p-4 text-gray-900">Rp {item.branch_price.toLocaleString('id-ID')}</td>
                     <td className="p-4">
@@ -251,8 +282,20 @@ export default function InventoryPage() {
             </div>
             <form onSubmit={handleAddProduct} className="p-4 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">SKU</label>
-                <input required type="text" value={newSku} onChange={(e) => setNewSku(e.target.value)} className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-gray-900" placeholder="Contoh: SKU-005" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Kategori Barang</label>
+                <input 
+                  type="text"
+                  list="category-options-add"
+                  placeholder="Ketik kategori baru atau pilih..."
+                  value={newCategory} 
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 bg-white"
+                />
+                <datalist id="category-options-add">
+                  {uniqueCategories.map(cat => (
+                    <option key={cat} value={cat} />
+                  ))}
+                </datalist>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nama Produk</label>
@@ -292,8 +335,26 @@ export default function InventoryPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nama Produk</label>
                 <input type="text" value={editName} disabled className="w-full p-2 border rounded-lg bg-gray-100 text-gray-500 outline-none" />
-                <p className="text-xs text-gray-400 mt-1">*Nama produk hanya bisa diubah oleh Superadmin</p>
               </div>
+              
+              {/* Form Edit Kategori dengan Datalist */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Kategori Barang</label>
+                <input 
+                  type="text"
+                  list="category-options-edit"
+                  placeholder="Ketik kategori baru atau pilih..."
+                  value={editCategory} 
+                  onChange={(e) => setEditCategory(e.target.value)}
+                  className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 bg-white"
+                />
+                <datalist id="category-options-edit">
+                  {uniqueCategories.map(cat => (
+                    <option key={cat} value={cat} />
+                  ))}
+                </datalist>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Harga Cabang (Rp)</label>

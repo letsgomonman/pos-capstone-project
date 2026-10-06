@@ -15,6 +15,8 @@ export interface LocalTransaction {
   branch_id: string;  // BARU
   cashier_id: string; // BARU
   total_amount: number;
+  discount_amount: number; // <--- BARU
+  order_note: string;
   payment_method: string;
   is_synced: number; // 0 = false (offline), 1 = true (sudah dikirim ke Supabase)
   created_at: string;
