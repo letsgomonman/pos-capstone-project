@@ -70,29 +70,51 @@ export default function TeamPage() {
     setIsSaving(true);
 
     try {
+      // PERBAIKAN 1: Tarik juga tenant_id untuk validasi keamanan
       const { data: userData, error: userErr } = await supabase
-        .from('users').select('id, name').eq('email', newEmail).single();
+        .from('users')
+        .select('id, name, tenant_id') // <--- Tambahkan tenant_id
+        .eq('email', newEmail)
+        .single();
 
       if (userErr || !userData) throw new Error("Email tidak ditemukan. Pastikan karyawan sudah mendaftar (jalur Pegawai).");
 
-      const isExist = team.some(member => member.users.id === userData.id);
+      // PERBAIKAN 2: Validasi Anti-Pencurian Karyawan
+      if (userData.tenant_id && userData.tenant_id !== session.tenantId) {
+        throw new Error("Karyawan ini sudah terdaftar dan bekerja di toko lain. Mereka harus resign (dihapus oleh pemilik sebelumnya) terlebih dahulu.");
+      }
+
+      const isExist = team.some(member => member.users?.id === userData.id);
       if (isExist) throw new Error("Pegawai ini sudah menjadi bagian dari tim Anda.");
 
-      // 1. Tambahkan ke Struktur Tim (dengan branch_id)
+      // 1. Tambahkan ke Struktur Tim (Tabel user_tenants)
       const { data: newMember, error: insertErr } = await supabase
         .from('user_tenants')
         .insert({
-          user_id: userData.id, tenant_id: session.tenantId, branch_id: newBranchId, role: newRole
+          user_id: userData.id, 
+          tenant_id: session.tenantId, 
+          branch_id: newBranchId, 
+          role: newRole
         })
         .select(`id, role, branch_id, users(id, name, email), branches(name)`)
         .single();
       
       if (insertErr) throw insertErr;
 
-      // 2. Perbarui profil default user agar login pertama mereka langsung sinkron ke cabang ini
-      await supabase.from('users')
-        .update({ tenant_id: session.tenantId, branch_id: newBranchId, role: newRole })
+      // 2. Perbarui profil default user di tabel utama
+      const { error: updateErr } = await supabase.from('users')
+        .update({ 
+          tenant_id: session.tenantId, 
+          branch_id: newBranchId, 
+          role: newRole 
+        })
         .eq('id', userData.id);
+        
+      if (updateErr) {
+        // Jika gagal update tabel utama, hapus kembali (Rollback) dari user_tenants agar data tidak inkonsisten
+        await supabase.from('user_tenants').delete().eq('id', newMember.id);
+        throw new Error("Gagal menyinkronkan profil pegawai. Silakan coba lagi.");
+      }
 
       setTeam(prev => [...prev, newMember as unknown as TeamMember]);
       setIsAddOpen(false);

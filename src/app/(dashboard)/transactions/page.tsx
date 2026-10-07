@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/hooks/useSession';
-import { Search, Eye, X, Receipt, CheckCircle, AlertCircle, FileText, Trash2 } from 'lucide-react';
+import { Search, Eye, X, Receipt, CheckCircle, AlertCircle, FileText, Trash2, Calculator, CreditCard, Banknote, PieChart } from 'lucide-react';
 
 // --- DEFINISI TIPE DATA ---
 interface TransactionItem {
@@ -35,14 +35,14 @@ export default function TransactionsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
-  const [isVoiding, setIsVoiding] = useState(false); // <--- State baru untuk proses Void
+  const [isVoiding, setIsVoiding] = useState(false);
 
   useEffect(() => {
     const fetchTransactions = async () => {
       if (!session?.tenantId) return;
 
       try {
-        const { data, error } = await supabase
+        let query = supabase
           .from('transactions')
           .select(`
             id, 
@@ -63,6 +63,12 @@ export default function TransactionsPage() {
           .eq('tenant_id', session.tenantId)
           .order('created_at', { ascending: false });
 
+        // Jika Manajer, batasi hanya melihat transaksi cabangnya saja
+        if (session.role === 'manager') {
+          query = query.eq('branch_id', session.branchId);
+        }
+
+        const { data, error } = await query;
         if (error) throw error;
         setTransactions(data as unknown as Transaction[]);
       } catch (error) {
@@ -75,7 +81,6 @@ export default function TransactionsPage() {
     fetchTransactions();
   }, [session]);
 
-  // --- FUNGSI VOID TRANSAKSI ---
   const handleVoidTransaction = async (txId: string) => {
     if (!session?.userId) return;
     
@@ -84,24 +89,21 @@ export default function TransactionsPage() {
 
     setIsVoiding(true);
     try {
-      // 1. Update ke Supabase
       const { error } = await supabase
         .from('transactions')
         .update({ 
           is_void: true,
-          voided_by: session.userId // Mencatat ID Manajer yang membatalkan
+          voided_by: session.userId 
         })
         .eq('id', txId);
 
       if (error) throw error;
 
-      // 2. Perbarui state lokal secara instan (Optimistic UI)
       setTransactions(prev => prev.map(tx => 
         tx.id === txId ? { ...tx, is_void: true } : tx
       ));
       
       setSelectedTx(prev => prev ? { ...prev, is_void: true } : null);
-
       alert("Transaksi berhasil dibatalkan (Void).");
     } catch (error: unknown) {
       console.error("Gagal membatalkan transaksi:", error);
@@ -111,20 +113,71 @@ export default function TransactionsPage() {
     }
   };
 
+  // --- KALKULASI ANALITIK REAL-TIME (ML-READY FEATURES) ---
+  const validTx = transactions.filter(tx => !tx.is_void);
+  const totalValidCount = validTx.length;
+  const totalRevenue = validTx.reduce((sum, tx) => sum + tx.total_amount, 0);
+  
+  // 1. Average Order Value (AOV)
+  const averageOrderValue = totalValidCount > 0 ? totalRevenue / totalValidCount : 0;
+  
+  // 2. Payment Method Distribution
+  const qrisCount = validTx.filter(tx => tx.payment_method.toLowerCase() === 'qris').length;
+  const cashCount = validTx.filter(tx => tx.payment_method.toLowerCase() === 'cash').length;
+  const qrisPercentage = totalValidCount > 0 ? Math.round((qrisCount / totalValidCount) * 100) : 0;
+  const cashPercentage = totalValidCount > 0 ? Math.round((cashCount / totalValidCount) * 100) : 0;
+
+  // Pencarian berdasarkan ID Struk atau Nama Kasir
   const filteredTx = transactions.filter(tx => 
     tx.offline_id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     tx.cashier?.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
-    <div className="p-8">
+    <div className="p-8 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Laporan Transaksi</h1>
-          <p className="text-gray-500 mt-1">Pantau riwayat penjualan dan audit struk Kasir.</p>
+          <p className="text-gray-500 mt-1">Pantau riwayat penjualan, audit struk Kasir, dan metrik pesanan rata-rata.</p>
         </div>
       </div>
 
+      {/* KARTU ANALITIK TRANSAKSI (AOV & Payment Ratio) */}
+      {!isLoading && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-start gap-4">
+            <div className="p-3 bg-blue-100 text-blue-600 rounded-lg"><Receipt size={24} /></div>
+            <div>
+              <p className="text-sm font-medium text-gray-500 mb-1">Total Struk Sukses</p>
+              <h3 className="text-2xl font-bold text-gray-900">{totalValidCount}</h3>
+            </div>
+          </div>
+          
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-start gap-4">
+            <div className="p-3 bg-green-100 text-green-600 rounded-lg"><Calculator size={24} /></div>
+            <div>
+              <p className="text-sm font-medium text-gray-500 mb-1">Rata-Rata Nilai Struk (AOV)</p>
+              <h3 className="text-2xl font-bold text-gray-900">Rp {averageOrderValue.toLocaleString('id-ID', { maximumFractionDigits: 0 })}</h3>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-start gap-4">
+            <div className="p-3 bg-purple-100 text-purple-600 rounded-lg"><PieChart size={24} /></div>
+            <div className="w-full">
+              <p className="text-sm font-medium text-gray-500 mb-2">Preferensi Pembayaran</p>
+              <div className="flex justify-between items-center text-sm font-bold text-gray-800 mb-1">
+                <span className="flex items-center gap-1"><CreditCard size={14} className="text-blue-500"/> QRIS ({qrisPercentage}%)</span>
+                <span className="flex items-center gap-1"><Banknote size={14} className="text-green-500"/> Tunai ({cashPercentage}%)</span>
+              </div>
+              <div className="w-full h-2 bg-green-200 rounded-full overflow-hidden flex">
+                <div className="h-full bg-blue-500" style={{ width: `${qrisPercentage}%` }}></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* KOLOM PENCARIAN */}
       <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-6 flex items-center gap-3">
         <Search className="text-gray-400" size={20} />
         <input 
@@ -136,6 +189,7 @@ export default function TransactionsPage() {
         />
       </div>
 
+      {/* TABEL TRANSAKSI */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -166,7 +220,7 @@ export default function TransactionsPage() {
                   <tr key={tx.id} className={`transition ${tx.is_void ? 'bg-red-50/50 opacity-75' : 'hover:bg-gray-50'}`}>
                     <td className="p-4 text-sm text-gray-600">
                       {new Date(tx.created_at).toLocaleString('id-ID', { 
-                        timeZone: 'Asia/Jakarta', // <--- Memaksa ke Waktu Indonesia Barat
+                        timeZone: 'Asia/Jakarta', 
                         day: 'numeric', 
                         month: 'short', 
                         year: 'numeric', 
@@ -228,10 +282,9 @@ export default function TransactionsPage() {
             </div>
             
             <div className="p-6 overflow-y-auto flex-1 relative">
-              {/* Tanda Air (Watermark) Jika Dibatalkan */}
               {selectedTx.is_void && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20 rotate-[-30deg]">
-                  <span className="text-6xl font-black text-red-600 border-8 border-red-600 p-4 rounded-xl">VOIDED</span>
+                  <span className="text-6xl font-black text-red-600 border-8 border-red-600 p-4 rounded-xl">BATAL</span>
                 </div>
               )}
 
@@ -291,7 +344,6 @@ export default function TransactionsPage() {
             </div>
             
             <div className="p-4 border-t bg-gray-50 shrink-0 flex gap-2">
-              {/* Tombol Void: Hanya muncul jika transaksi BERHASIL (belum di-void) */}
               {!selectedTx.is_void && (
                 <button 
                   onClick={() => handleVoidTransaction(selectedTx.id)}
@@ -299,7 +351,7 @@ export default function TransactionsPage() {
                   className="flex-1 flex items-center justify-center gap-2 bg-red-100 text-red-700 font-bold p-3 rounded-lg hover:bg-red-200 disabled:opacity-50 transition"
                 >
                   <Trash2 size={18} />
-                  {isVoiding ? 'Memproses...' : 'Void Transaksi'}
+                  {isVoiding ? 'Memproses...' : 'Batalkan Transaksi'}
                 </button>
               )}
               
@@ -307,7 +359,7 @@ export default function TransactionsPage() {
                 onClick={() => setSelectedTx(null)}
                 className="flex-1 bg-gray-800 text-white font-bold p-3 rounded-lg hover:bg-gray-900 transition"
               >
-                Tutup Modal
+                Tutup
               </button>
             </div>
           </div>

@@ -107,14 +107,14 @@ export default function BranchesPage() {
     }
   };
 
-  // FITUR BARU 2: BERALIH CABANG AKTIF
+  // FITUR BERALIH CABANG AKTIF
   const handleSwitchBranch = (branchId: string) => {
     if (!session || session.branchId === branchId) return;
     
-    // Perbarui sesi dengan branchId yang baru
+    // Perbarui sesi dengan branchId yang baru (Otomatis tersimpan ke localStorage)
     login({ ...session, branchId });
     
-    // Hard reload agar seluruh dashboard membaca data cabang yang baru
+    // Hard reload agar dasbor membaca data cabang yang baru
     window.location.assign(window.location.origin + '/branches');
   };
 

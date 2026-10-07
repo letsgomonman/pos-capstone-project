@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
 
-// Tipe Data Sesi
 interface UserSession {
   userId: string;
   name: string;
@@ -10,7 +9,6 @@ interface UserSession {
   branchId: string;
 }
 
-// Tipe Data untuk Zustand Store
 interface SessionStore {
   session: UserSession | null;
   isLoading: boolean;
@@ -19,60 +17,71 @@ interface SessionStore {
   initializeSession: () => Promise<void>;
 }
 
-export const useSession = create<SessionStore>((set) => ({
+export const useSession = create<SessionStore>((set, get) => ({
   session: null,
-  isLoading: true, // Selalu true saat pertama kali dimuat
+  isLoading: true,
 
-  // Fungsi Login (Hanya untuk mengupdate UI secara instan setelah Auth berhasil)
-  login: (data) => set({ session: data, isLoading: false }),
+  // Fungsi Login sekarang otomatis menyimpan pilihan ke memori browser
+  login: (data) => {
+    localStorage.setItem('active_tenant', data.tenantId);
+    localStorage.setItem('active_branch', data.branchId);
+    set({ session: data, isLoading: false });
+  },
 
-  // Fungsi Logout (Menghapus sesi di Supabase DAN menghapus state lokal)
   logout: async () => {
     set({ isLoading: true });
     try {
-      await supabase.auth.signOut(); // Hapus token dari server Supabase
+      await supabase.auth.signOut();
+      localStorage.removeItem('active_tenant');
+      localStorage.removeItem('active_branch');
     } catch (error) {
-      console.error("Gagal logout dari Supabase:", error);
+      console.error("Gagal logout:", error);
     } finally {
       set({ session: null, isLoading: false });
     }
   },
 
-  // Fungsi Penjaga Gerbang (Dipanggil di layout.tsx dan pos/page.tsx)
   initializeSession: async () => {
     set({ isLoading: true });
     
     try {
-      // 1. Cek Token Valid dari Supabase Auth
-      const { data: { session: authSession }, error: authError } = await supabase.auth.getSession();
-      
-      if (authError || !authSession) {
-        // Token tidak ada atau kedaluwarsa -> Anggap belum login
+      const { data: { session: authSession } } = await supabase.auth.getSession();
+      if (!authSession) {
         set({ session: null, isLoading: false });
         return;
       }
 
-      // 2. Jika Token Valid, tarik informasi profil usahanya dari tabel users
-      const { data: userData, error: userError } = await supabase
+      const { data: userData } = await supabase
         .from('users')
         .select('name, role, tenant_id, branch_id')
         .eq('id', authSession.user.id)
         .single();
 
-      if (userError || !userData) {
-        // Punya token, tapi datanya terhapus di database -> Anggap belum login
+      if (!userData) {
         set({ session: null, isLoading: false });
         return;
       }
 
-      // 3. Simpan ke memori aplikasi (State)
+      let activeTenant = userData.tenant_id;
+      let activeBranch = userData.branch_id;
+
+      // KUNCI MULTI-TENANT: 
+      // Hanya Owner yang diizinkan memulihkan sesi usaha dari memori browser
+      if (userData.role === 'owner') {
+        const savedTenant = localStorage.getItem('active_tenant');
+        const savedBranch = localStorage.getItem('active_branch');
+        
+        if (savedTenant) activeTenant = savedTenant;
+        if (savedBranch) activeBranch = savedBranch;
+      }
+
       set({
         session: {
           userId: authSession.user.id,
           name: userData.name,
           role: userData.role,
-          tenantId: userData.tenant_id,
-          branchId: userData.branch_id
+          tenantId: activeTenant,
+          branchId: activeBranch
         },
         isLoading: false
       });
