@@ -97,6 +97,16 @@ export default function LoginPage() {
           <button type="submit" disabled={isLoading} className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition flex items-center justify-center gap-2 mt-6">
             {isLoading ? 'Memproses...' : 'Masuk'} <LogIn size={18} />
           </button>
+          
+          {/* Tautan Navigasi (Merapat ke tombol Masuk) */}
+          <div className="text-center pt-2">
+            <p className="text-sm text-gray-600">
+              Belum memiliki akun?{' '}
+              <Link href="/register" className="text-blue-600 font-bold hover:text-blue-800 hover:underline transition">
+                Daftar Sekarang
+              </Link>
+            </p>
+          </div>
         </form>
       </div>
     </div>
