@@ -53,9 +53,6 @@ export default function LoginPage() {
       } else {
         window.location.assign(window.location.origin + '/analytics'); // Arahkan ke Back-Office
       }
-      
-      // Pindah ke Dashboard secara mulus tanpa Hard Reload
-      router.push('/');
 
     } catch (error: unknown) {
       let msg = "Terjadi kesalahan sistem.";

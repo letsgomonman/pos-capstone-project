@@ -146,6 +146,23 @@ export default function WorkspacesPage() {
     }
   };
 
+  // Tambahkan fungsi ini di workspaces/page.tsx
+  const handleDeleteWorkspace = async (tenantId: string, tenantName: string) => {
+    if (tenantId === session?.tenantId) {
+      alert("Tidak bisa menghapus usaha yang sedang Anda gunakan. Beralihlah ke usaha lain terlebih dahulu.");
+      return;
+    }
+    if (!confirm(`Peringatan Keras: Hapus PERMANEN usaha "${tenantName}"? Seluruh cabang, produk, dan transaksi akan musnah.`)) return;
+
+    try {
+      const { error } = await supabase.from('tenants').delete().eq('id', tenantId);
+      if (error) throw error;
+      setWorkspaces(prev => prev.filter(w => w.tenant_id !== tenantId));
+    } catch (error) {
+      alert("Gagal menghapus usaha. Pastikan pengaturan ON DELETE CASCADE di database Anda sudah aktif.");
+    }
+  };
+
   return (
     <div className="p-8">
       <div className="flex justify-between items-center mb-8">

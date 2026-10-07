@@ -3,9 +3,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/hooks/useSession';
-import { Search, Plus, Edit2, X, Box } from 'lucide-react';
+import { Search, Plus, Edit2, X, Box, Trash2 } from 'lucide-react'; // Tambahkan Trash2
 
-// PERBAIKAN 1: Tambahkan 'category' ke dalam interface products
 interface InventoryItem {
   id: string; 
   stock_qty: number;
@@ -29,21 +28,21 @@ export default function InventoryPage() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // State Form Tambah
+  // State Form Tambah[cite: 5]
   const [newName, setNewName] = useState('');
   const [newCategory, setNewCategory] = useState('');
   const [newPrice, setNewPrice] = useState<number | string>('');
   const [newStock, setNewStock] = useState<number | string>('');
   
-  // State Form Edit
+  // State Form Edit[cite: 5]
   const [editId, setEditId] = useState('');
-  const [editProductId, setEditProductId] = useState(''); // Untuk update kategori di tabel products
+  const [editProductId, setEditProductId] = useState(''); 
   const [editName, setEditName] = useState('');
   const [editCategory, setEditCategory] = useState('');
   const [editPrice, setEditPrice] = useState<number | string>('');
   const [editStock, setEditStock] = useState<number | string>('');
 
-  // PERBAIKAN 2: Mengambil kategori unik dengan aman dari state 'inventory'
+  // Mengambil kategori unik dengan aman dari state 'inventory'[cite: 5]
   const uniqueCategories: string[] = Array.from(
     new Set(
       inventory
@@ -56,7 +55,7 @@ export default function InventoryPage() {
     if (!session?.branchId) return;
     
     try {
-      // PERBAIKAN 3: Tarik juga kolom 'category' dari relasi products
+      // Tarik kolom 'category' dari relasi products[cite: 5]
       const { data, error } = await supabase
         .from('branch_inventory')
         .select(`
@@ -93,6 +92,7 @@ export default function InventoryPage() {
     setIsSaving(true);
 
     try {
+      // Pembuatan SKU Otomatis[cite: 5]
       const autoSku = `SKU-${Date.now().toString().slice(-6)}`;
       const { data: productData, error: pErr } = await supabase
         .from('products')
@@ -135,7 +135,7 @@ export default function InventoryPage() {
     e.preventDefault();
     setIsSaving(true);
     try {
-      // 1. Update Stok dan Harga di branch_inventory
+      // 1. Update Stok dan Harga di branch_inventory[cite: 5]
       const { error: invError } = await supabase
         .from('branch_inventory')
         .update({
@@ -147,7 +147,7 @@ export default function InventoryPage() {
 
       if (invError) throw invError;
 
-      // 2. Update Kategori di tabel master products
+      // 2. Update Kategori di tabel master products[cite: 5]
       const { error: prodError } = await supabase
         .from('products')
         .update({ category: editCategory || 'Umum' })
@@ -165,11 +165,32 @@ export default function InventoryPage() {
     }
   };
 
+  // FITUR BARU: Hapus Produk
+  const handleDeleteProduct = async (inventoryId: string, productId: string, productName: string) => {
+    if (!confirm(`Apakah Anda yakin ingin menghapus "${productName}" dari katalog?`)) return;
+    
+    try {
+      // Menghapus data induk (Otomatis akan menghapus stok di cabang karena relasi DB)
+      const { error } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', productId);
+        
+      if (error) throw error;
+      
+      // Update UI lokal agar terasa cepat
+      setInventory(prev => prev.filter(item => item.id !== inventoryId));
+    } catch (error: unknown) {
+      console.error("Gagal menghapus produk:", error);
+      alert('Gagal menghapus. Pastikan produk ini belum memiliki riwayat transaksi.');
+    }
+  };
+
   const openEditModal = (item: InventoryItem) => {
     setEditId(item.id);
     setEditProductId(item.products.id);
     setEditName(item.products.name);
-    setEditCategory(item.products.category || ''); // Mengisi kategori saat ini
+    setEditCategory(item.products.category || ''); 
     setEditPrice(item.branch_price);
     setEditStock(item.stock_qty);
     setIsEditOpen(true);
@@ -179,7 +200,7 @@ export default function InventoryPage() {
     item.products.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     item.products.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (item.products.category && item.products.category.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  ); //[cite: 5]
 
   return (
     <div className="p-8">
@@ -254,13 +275,22 @@ export default function InventoryPage() {
                       </span>
                     </td>
                     <td className="p-4 text-center">
-                      <button 
-                        onClick={() => openEditModal(item)}
-                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                        title="Edit Stok & Harga"
-                      >
-                        <Edit2 size={18} />
-                      </button>
+                      <div className="flex justify-center items-center gap-2">
+                        <button 
+                          onClick={() => openEditModal(item)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                          title="Edit Stok & Harga"
+                        >
+                          <Edit2 size={18} />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteProduct(item.id, item.products.id, item.products.name)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                          title="Hapus Produk"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -337,7 +367,7 @@ export default function InventoryPage() {
                 <input type="text" value={editName} disabled className="w-full p-2 border rounded-lg bg-gray-100 text-gray-500 outline-none" />
               </div>
               
-              {/* Form Edit Kategori dengan Datalist */}
+              {/* Form Edit Kategori dengan Datalist[cite: 5] */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Kategori Barang</label>
                 <input 

@@ -5,17 +5,67 @@ import CartPanel from '@/components/pos/Cart';
 import ProductGrid from '@/components/pos/ProductGrid';
 import { useSession } from '@/hooks/useSession';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { LogOut, Archive } from 'lucide-react';
 
 export default function POSPage() {
-  const { session, isLoading } = useSession();
+  const { session, isLoading, initializeSession, logout } = useSession();
   const router = useRouter();
   const [isClosing, setIsClosing] = useState(false);
 
+  // STATE BARU: Untuk menyimpan nama toko dan cabang
+  const [storeName, setStoreName] = useState('Memuat Toko...');
+  const [branchName, setBranchName] = useState('');
+
+  useEffect(() => {
+    initializeSession();
+  }, [initializeSession]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      if (!session) {
+        router.replace('/login');
+      } else if (session.role === 'manager') {
+        router.replace('/analytics');
+      }
+    }
+  }, [session, isLoading, router]);
+
+  // LOGIKA BARU: Menarik nama Usaha (Tenant) dan Cabang (Branch) dari database
+  useEffect(() => {
+    const fetchStoreInfo = async () => {
+      if (!session?.tenantId || !session?.branchId) return;
+      try {
+        // Tarik nama Usaha/Tenant
+        const { data: tenant } = await supabase
+          .from('tenants')
+          .select('name')
+          .eq('id', session.tenantId)
+          .single();
+
+        // Tarik nama Cabang
+        const { data: branch } = await supabase
+          .from('branches')
+          .select('name')
+          .eq('id', session.branchId)
+          .single();
+
+        if (tenant) setStoreName(tenant.name);
+        if (branch) setBranchName(branch.name);
+      } catch (error) {
+        console.error("Gagal memuat informasi toko:", error);
+        setStoreName("Toko Tidak Dikenal");
+      }
+    };
+
+    if (session) {
+      fetchStoreInfo();
+    }
+  }, [session]);
+
   const handleLogout = () => {
-    localStorage.removeItem('pos_session');
+    logout(); 
     router.push('/login');
   };
 
@@ -30,7 +80,6 @@ export default function POSPage() {
         throw new Error("Anda harus dalam keadaan Online (Terkoneksi Internet) untuk Tutup Kasir.");
       }
 
-      // 1. Ambil stok riil saat ini dari cabang
       const { data: invData, error: invErr } = await supabase
         .from('branch_inventory')
         .select('product_id, stock_qty')
@@ -42,8 +91,7 @@ export default function POSPage() {
          throw new Error("Tidak ada produk di inventory cabang ini.");
       }
 
-      // 2. Siapkan array data snapshot untuk direkam
-      const today = new Date().toISOString().split('T')[0]; // Format YYYY-MM-DD
+      const today = new Date().toISOString().split('T')[0]; 
       const snapshots = invData.map((item) => ({
         tenant_id: session.tenantId,
         branch_id: session.branchId,
@@ -52,7 +100,6 @@ export default function POSPage() {
         snapshot_date: today
       }));
 
-      // 3. Simpan ke database (Upsert menimpa data jika tanggalnya sama, mencegah duplikasi)
       const { error: snapErr } = await supabase
         .from('daily_inventory_snapshots')
         .upsert(snapshots, { onConflict: 'branch_id, product_id, snapshot_date' });
@@ -60,7 +107,7 @@ export default function POSPage() {
       if (snapErr) throw snapErr;
 
       alert("Tutup Kasir Berhasil! Data ML harian tersimpan. Anda akan dikeluarkan dari sistem.");
-      handleLogout(); // Otomatis keluar setelah sukses EOD
+      handleLogout(); 
 
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -74,14 +121,21 @@ export default function POSPage() {
     return <div className="h-screen w-full flex items-center justify-center bg-gray-100 text-gray-900">Memuat Sesi Kasir...</div>;
   }
 
+  if (!session || session.role === 'manager') {
+    return null;
+  }
+
   return (
     <div className="flex flex-col h-screen w-full bg-gray-100 overflow-hidden text-gray-900">
       <header className="bg-white shadow-sm h-16 flex items-center justify-between px-6 shrink-0 z-10">
         <div className="flex items-center gap-4">
           <div className="bg-blue-600 text-white font-bold px-3 py-1 rounded">POS</div>
+          
+          {/* PENERAPAN NAMA DINAMIS */}
           <h1 className="font-semibold text-lg text-gray-800 hidden md:block">
-            Toko Capstone - Cabang Pusat
+            {storeName} {branchName && <span className="text-gray-500 font-normal"> - {branchName}</span>}
           </h1>
+          
         </div>
         
         <div className="flex items-center gap-4">
@@ -92,7 +146,6 @@ export default function POSPage() {
               Kasir: <span className="font-semibold text-gray-900">{session?.name || 'Anonim'}</span>
             </span>
             
-            {/* Tombol End of Day */}
             <button 
               onClick={handleEndOfDay}
               disabled={isClosing}
@@ -103,7 +156,6 @@ export default function POSPage() {
               {isClosing ? 'Merekam...' : 'Tutup Kasir'}
             </button>
 
-            {/* Tombol Logout Biasa */}
             <button 
               onClick={handleLogout}
               className="flex items-center gap-1 text-red-500 hover:text-red-700 font-medium text-xs border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded transition"
