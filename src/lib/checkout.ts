@@ -11,7 +11,7 @@ interface CheckoutPayload {
   cashierId: string;
   customerName?: string;
   customerPhone?: string;
-  discountAmount: number; // <--- BARU
+  discountAmount: number; 
   orderNote: string;
 }
 
@@ -20,15 +20,22 @@ export async function processCheckout(payload: CheckoutPayload) {
   let customerId = null;
 
   try {
-    // --- 1. CRM & ML-READY LOGIC (RFM Analysis) ---
-    // Hanya proses CRM jika Kasir sedang online dan No. HP diisi
-    if (navigator.onLine && payload.customerPhone) {
-      const { data: existingCust } = await supabase
-        .from('customers')
-        .select('id, total_orders, total_spend')
-        .eq('phone', payload.customerPhone)
-        .eq('tenant_id', payload.tenantId)
-        .single();
+    // --- 1. CRM & ML-READY LOGIC (PERBAIKAN) ---
+    // Proses jika Kasir online DAN (ada No HP ATAU ada Nama)
+    if (navigator.onLine && (payload.customerPhone || payload.customerName)) {
+      
+      let existingCust = null;
+
+      // Hanya cari pelanggan lama jika No HP diisi
+      if (payload.customerPhone) {
+        const { data } = await supabase
+          .from('customers')
+          .select('id, total_orders, total_spend')
+          .eq('phone', payload.customerPhone)
+          .eq('tenant_id', payload.tenantId)
+          .single();
+        existingCust = data;
+      }
 
       if (existingCust) {
         // Pelanggan Lama: Update RFM Metrics
@@ -41,13 +48,13 @@ export async function processCheckout(payload: CheckoutPayload) {
           })
           .eq('id', customerId);
       } else {
-        // Pelanggan Baru: Insert Data
+        // Pelanggan Baru (Dari No HP baru, ATAU hanya input Nama saja)
         const { data: newCust } = await supabase
           .from('customers')
           .insert({
             tenant_id: payload.tenantId,
             name: payload.customerName || 'Pelanggan Member',
-            phone: payload.customerPhone,
+            phone: payload.customerPhone || null, // Biarkan null jika tidak ada no HP
             total_orders: 1,
             total_spend: payload.totalAmount,
             last_purchase_date: new Date().toISOString()
@@ -59,18 +66,18 @@ export async function processCheckout(payload: CheckoutPayload) {
     }
 
     // --- 2. SIMPAN KE LOKAL (Offline-First) ---
-        await db.transactions.add({
-          offline_id: offlineId,
-          tenant_id: payload.tenantId,     // <--- Tambahkan ini
-          branch_id: payload.branchId,     // <--- Tambahkan ini
-          cashier_id: payload.cashierId,   // <--- Tambahkan ini
-          total_amount: payload.totalAmount,
-          discount_amount: payload.discountAmount, // <--- Data dimasukkan
-          order_note: payload.orderNote,
-          payment_method: payload.paymentMethod,
-          is_synced: 0,
-          created_at: new Date().toISOString(),
-        });
+    await db.transactions.add({
+      offline_id: offlineId,
+      tenant_id: payload.tenantId,    
+      branch_id: payload.branchId,    
+      cashier_id: payload.cashierId,  
+      total_amount: payload.totalAmount,
+      discount_amount: payload.discountAmount,
+      order_note: payload.orderNote,
+      payment_method: payload.paymentMethod,
+      is_synced: 0,
+      created_at: new Date().toISOString(),
+    });
 
     // --- 3. SIMPAN KE CLOUD (Jika Online) ---
     if (navigator.onLine) {
@@ -81,9 +88,9 @@ export async function processCheckout(payload: CheckoutPayload) {
            tenant_id: payload.tenantId,
            branch_id: payload.branchId,
            cashier_id: payload.cashierId,
-           customer_id: customerId, // Tautkan transaksi dengan Pelanggan!
+           customer_id: customerId, // <--- Relasi akan aman sekarang!
            total_amount: payload.totalAmount,
-           discount_amount: payload.discountAmount, // <--- BARU
+           discount_amount: payload.discountAmount, 
            order_note: payload.orderNote,
            payment_method: payload.paymentMethod,
            is_synced: true

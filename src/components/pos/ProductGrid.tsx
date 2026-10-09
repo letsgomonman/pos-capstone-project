@@ -37,6 +37,8 @@ export default function ProductGrid() {
 
   useEffect(() => {
     if (isSessionLoading) return;
+    
+    // Kita pisahkan fungsinya agar bisa dipanggil ulang
     const fetchMasterData = async () => {
       setIsLoading(true);
       
@@ -44,7 +46,6 @@ export default function ProductGrid() {
         if (navigator.onLine && branchId) {
           console.log("Online: Menarik Master Data terbaru dari Supabase...");
           
-          // Memanggil kolom category dari tabel products
           const { data: inventoryData, error } = await supabase
             .from('branch_inventory')
             .select(`
@@ -66,7 +67,7 @@ export default function ProductGrid() {
               name: item.products.name,
               branch_price: item.branch_price,
               stock_qty: item.stock_qty,
-              category: item.products.category || 'Umum' // Default jika kosong
+              category: item.products.category || 'Umum' 
             }));
 
             await db.products.clear();
@@ -85,6 +86,22 @@ export default function ProductGrid() {
     };
     
     fetchMasterData();
+
+    // =====================================================================
+    // PERBAIKAN: EVENT LISTENER UNTUK MENANGKAP SINYAL DARI CART
+    // =====================================================================
+    const handleRefresh = () => {
+      console.log("Sinyal diterima! Memuat ulang stok...");
+      fetchMasterData();
+    };
+
+    window.addEventListener('refreshProductGrid', handleRefresh);
+
+    // Bersihkan listener saat komponen ditutup agar tidak membebani memori
+    return () => {
+      window.removeEventListener('refreshProductGrid', handleRefresh);
+    };
+
   }, [branchId, isSessionLoading]); 
 
   // EKSTRAK KATEGORI SECARA OTOMATIS

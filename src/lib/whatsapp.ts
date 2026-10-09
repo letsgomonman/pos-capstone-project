@@ -1,14 +1,15 @@
 import { CartItem } from '@/hooks/useCartStore';
 
 interface WAReceiptParams {
-  customerPhone: string; // Contoh: '08123456789' atau '628123456789'
+  customerPhone: string;
   transactionId: string;
   items: CartItem[];
   totalAmount: number;
   branchName: string;
+  customerName?: string; // <--- PERBAIKAN: Parameter pelanggan
 }
 
-export function sendWhatsAppReceipt({ customerPhone, transactionId, items, totalAmount, branchName }: WAReceiptParams) {
+export function sendWhatsAppReceipt({ customerPhone, transactionId, items, totalAmount, branchName, customerName }: WAReceiptParams) {
   // 1. Format Nomor Telepon (Ubah 0 di depan jadi 62)
   let phone = customerPhone.replace(/\D/g, ''); // Buang karakter non-angka
   if (phone.startsWith('0')) {
@@ -16,7 +17,14 @@ export function sendWhatsAppReceipt({ customerPhone, transactionId, items, total
   }
 
   // 2. Rangkai Teks Struk
-  let text = `*TERIMA KASIH TELAH BERBELANJA!*\n`;
+  let text = '';
+  
+  // PERBAIKAN: Sapaan personal jika nama pelanggan tersedia
+  if (customerName && customerName !== 'Umum' && customerName !== 'Pelanggan Member') {
+    text += `Halo, *${customerName}*! 👋\n\n`;
+  }
+  
+  text += `*TERIMA KASIH TELAH BERBELANJA!*\n`;
   text += `📍 Toko Capstone - ${branchName}\n`;
   text += `🧾 No: ${transactionId.substring(0,8)}\n`;
   text += `--------------------------------\n`;

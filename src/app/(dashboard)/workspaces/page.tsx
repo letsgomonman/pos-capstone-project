@@ -22,7 +22,6 @@ export default function WorkspacesPage() {
 
   useEffect(() => {
     const fetchWorkspaces = async () => {
-      // Fitur Multi-Tenant (Banyak Toko) HANYA berlaku untuk jabatan Owner.
       if (!session?.userId || session.role !== 'owner') {
         setIsLoading(false);
         return;
@@ -31,12 +30,24 @@ export default function WorkspacesPage() {
       setIsLoading(true);
       try {
         const { data, error } = await supabase
-          .from('tenants')
-          .select('id, name')
-          .order('created_at', { ascending: true });
+          .from('user_tenants')
+          .select('tenant_id, tenants (id, name)')
+          .eq('user_id', session.userId)
+          .eq('role', 'owner');
 
         if (error) throw error;
-        setWorkspaces(data || []);
+        
+        // PERBAIKAN: Mengganti 'any' dengan tipe data eksplisit (unknown -> interface) 
+        // dan menambahkan perlindungan jika seandainya data 'tenants' terhapus/kosong
+        const formattedWorkspaces = (data || []).map((item: unknown) => {
+          const row = item as { tenants: { id: string; name: string } | null };
+          return {
+            id: row.tenants?.id || '',
+            name: row.tenants?.name || 'Usaha Tidak Dikenal'
+          };
+        }).filter(w => w.id !== ''); // Singkirkan data yatim piatu yang tidak memiliki ID
+
+        setWorkspaces(formattedWorkspaces);
       } catch (error) {
         console.error("Gagal memuat daftar usaha:", error);
       } finally {
@@ -53,21 +64,36 @@ export default function WorkspacesPage() {
     setIsSaving(true);
 
     try {
+      // 1. Buat Toko Baru
       const { data: tenantData, error: tenantErr } = await supabase
         .from('tenants')
         .insert({ name: newTenantName })
         .select().single();
       if (tenantErr) throw tenantErr;
 
-      const { error: branchErr } = await supabase
+      // 2. Buat Cabang Pusat dan TANGKAP ID-nya
+      const { data: branchData, error: branchErr } = await supabase
         .from('branches')
         .insert({
           tenant_id: tenantData.id,
           name: 'Cabang Pusat',
           address: 'Alamat belum diatur'
-        });
+        })
+        .select().single(); // PERBAIKAN: Wajib ditambahkan agar menghasilkan return data
       if (branchErr) throw branchErr;
 
+      // 3. Daftarkan Owner ke tabel relasi agar toko tidak menjadi "Siluman"
+      const { error: junctionErr } = await supabase
+        .from('user_tenants')
+        .insert({
+          user_id: session.userId,
+          tenant_id: tenantData.id,
+          branch_id: branchData.id,
+          role: 'owner'
+        });
+      if (junctionErr) throw junctionErr;
+
+      // 4. Perbarui antarmuka (UI)
       setWorkspaces(prev => [...prev, tenantData]);
       setIsAddOpen(false);
       setNewTenantName('');
@@ -95,7 +121,18 @@ export default function WorkspacesPage() {
         .limit(1)
         .single();
 
-      if (branchErr) throw new Error("Usaha ini belum memiliki cabang. Tidak bisa beralih.");
+      if (branchErr) throw new Error("Usaha ini belum memiliki cabang.");
+
+      // PERBAIKAN 1: Pindahkan lokasi Owner di tabel users agar muncul di halaman Tim!
+      const { error: updateErr } = await supabase
+        .from('users')
+        .update({
+          tenant_id: tenantId,
+          branch_id: branchData.id
+        })
+        .eq('id', session.userId);
+
+      if (updateErr) throw updateErr;
 
       // Sinkronisasi Sesi & Local Storage
       login({
@@ -104,7 +141,7 @@ export default function WorkspacesPage() {
         branchId: branchData.id
       }); 
       
-      window.location.assign(window.location.origin + '/'); 
+      window.location.assign(window.location.origin + '/analytics'); 
 
     } catch (error: unknown) {
       let msg = "Terjadi kesalahan saat beralih usaha.";

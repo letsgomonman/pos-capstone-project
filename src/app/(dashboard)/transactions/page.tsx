@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/hooks/useSession';
-import { Search, Eye, X, Receipt, CheckCircle, AlertCircle, FileText, Trash2, Calculator, CreditCard, Banknote, PieChart } from 'lucide-react';
+import { Search, Eye, X, Receipt, CheckCircle, AlertCircle, FileText, Trash2, Calculator, CreditCard, Banknote, PieChart, User } from 'lucide-react';
 
 // --- DEFINISI TIPE DATA ---
 interface TransactionItem {
   id: string;
+  product_id: string;
   qty: number;
   unit_price: number;
   subtotal: number;
@@ -25,6 +26,8 @@ interface Transaction {
   is_synced: boolean;
   is_void: boolean;
   cashier: { name: string };
+  // PERBAIKAN: Menambahkan antarmuka untuk data pelanggan
+  customers: { name: string; phone: string } | null;
   transaction_items: TransactionItem[];
 }
 
@@ -55,15 +58,15 @@ export default function TransactionsPage() {
             is_synced, 
             is_void,
             cashier:users!transactions_cashier_id_fkey (name),
+            customers (name, phone), 
             transaction_items (
-              id, qty, unit_price, subtotal,
+              id, product_id, qty, unit_price, subtotal,
               products (name, sku)
             )
           `)
           .eq('tenant_id', session.tenantId)
           .order('created_at', { ascending: false });
 
-        // Jika Manajer, batasi hanya melihat transaksi cabangnya saja
         if (session.role === 'manager') {
           query = query.eq('branch_id', session.branchId);
         }
@@ -82,13 +85,15 @@ export default function TransactionsPage() {
   }, [session]);
 
   const handleVoidTransaction = async (txId: string) => {
-    if (!session?.userId) return;
+    // Pastikan kita memiliki sesi dan data transaksi yang sedang dipilih
+    if (!session?.userId || !selectedTx) return;
     
-    const confirmVoid = window.confirm("YAKIN BATALKAN TRANSAKSI? \n\nOmzet dari transaksi ini tidak akan dihitung, dan tindakan ini tidak dapat diurungkan.");
+    const confirmVoid = window.confirm("YAKIN BATALKAN TRANSAKSI? \n\nOmzet dari transaksi ini tidak akan dihitung, dan STOK BARANG AKAN DIKEMBALIKAN ke sistem.");
     if (!confirmVoid) return;
 
     setIsVoiding(true);
     try {
+      // 1. Ubah status transaksi menjadi Batal (Void)
       const { error } = await supabase
         .from('transactions')
         .update({ 
@@ -99,12 +104,33 @@ export default function TransactionsPage() {
 
       if (error) throw error;
 
+      // 2. LOGIKA BARU: KEMBALIKAN STOK BARANG
+      for (const item of selectedTx.transaction_items) {
+        // Tarik data stok terakhir dari database
+        const { data: currentInv } = await supabase
+          .from('branch_inventory')
+          .select('id, stock_qty')
+          .eq('branch_id', session.branchId)
+          .eq('product_id', item.product_id)
+          .single();
+
+        if (currentInv) {
+          // Tambahkan kembali stok sesuai dengan kuantitas (qty) yang dibatalkan
+          await supabase
+            .from('branch_inventory')
+            .update({ stock_qty: currentInv.stock_qty + item.qty })
+            .eq('id', currentInv.id);
+        }
+      }
+
+      // 3. Perbarui tampilan layar (UI)
       setTransactions(prev => prev.map(tx => 
         tx.id === txId ? { ...tx, is_void: true } : tx
       ));
       
       setSelectedTx(prev => prev ? { ...prev, is_void: true } : null);
-      alert("Transaksi berhasil dibatalkan (Void).");
+      alert("Transaksi berhasil dibatalkan dan stok produk telah dikembalikan.");
+      
     } catch (error: unknown) {
       console.error("Gagal membatalkan transaksi:", error);
       alert("Terjadi kesalahan sistem saat membatalkan transaksi.");
@@ -113,24 +139,22 @@ export default function TransactionsPage() {
     }
   };
 
-  // --- KALKULASI ANALITIK REAL-TIME (ML-READY FEATURES) ---
   const validTx = transactions.filter(tx => !tx.is_void);
   const totalValidCount = validTx.length;
   const totalRevenue = validTx.reduce((sum, tx) => sum + tx.total_amount, 0);
   
-  // 1. Average Order Value (AOV)
   const averageOrderValue = totalValidCount > 0 ? totalRevenue / totalValidCount : 0;
   
-  // 2. Payment Method Distribution
   const qrisCount = validTx.filter(tx => tx.payment_method.toLowerCase() === 'qris').length;
   const cashCount = validTx.filter(tx => tx.payment_method.toLowerCase() === 'cash').length;
   const qrisPercentage = totalValidCount > 0 ? Math.round((qrisCount / totalValidCount) * 100) : 0;
   const cashPercentage = totalValidCount > 0 ? Math.round((cashCount / totalValidCount) * 100) : 0;
 
-  // Pencarian berdasarkan ID Struk atau Nama Kasir
+  // PERBAIKAN: Memungkinkan pencarian berdasarkan nama pelanggan juga
   const filteredTx = transactions.filter(tx => 
     tx.offline_id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    tx.cashier?.name.toLowerCase().includes(searchQuery.toLowerCase())
+    tx.cashier?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    tx.customers?.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -142,7 +166,6 @@ export default function TransactionsPage() {
         </div>
       </div>
 
-      {/* KARTU ANALITIK TRANSAKSI (AOV & Payment Ratio) */}
       {!isLoading && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
           <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-start gap-4">
@@ -177,19 +200,17 @@ export default function TransactionsPage() {
         </div>
       )}
 
-      {/* KOLOM PENCARIAN */}
       <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-6 flex items-center gap-3">
         <Search className="text-gray-400" size={20} />
         <input 
           type="text" 
-          placeholder="Cari No. Struk atau Nama Kasir..." 
+          placeholder="Cari No. Struk, Nama Kasir, atau Pelanggan..." 
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full focus:outline-none text-gray-900 bg-transparent"
         />
       </div>
 
-      {/* TABEL TRANSAKSI */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -197,6 +218,7 @@ export default function TransactionsPage() {
               <tr className="bg-gray-50 border-b border-gray-200 text-gray-600 text-sm uppercase tracking-wider">
                 <th className="p-4 font-semibold">Tanggal</th>
                 <th className="p-4 font-semibold">No. Struk (ID)</th>
+                <th className="p-4 font-semibold">Pelanggan</th>
                 <th className="p-4 font-semibold">Kasir</th>
                 <th className="p-4 font-semibold">Total</th>
                 <th className="p-4 font-semibold">Status</th>
@@ -206,11 +228,11 @@ export default function TransactionsPage() {
             <tbody className="divide-y divide-gray-200">
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-gray-500">Memuat riwayat transaksi...</td>
+                  <td colSpan={7} className="p-8 text-center text-gray-500">Memuat riwayat transaksi...</td>
                 </tr>
               ) : filteredTx.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-gray-500 flex flex-col items-center">
+                  <td colSpan={7} className="p-8 text-center text-gray-500 flex flex-col items-center">
                     <Receipt size={32} className="mb-2 text-gray-300" />
                     Belum ada transaksi tercatat.
                   </td>
@@ -240,6 +262,18 @@ export default function TransactionsPage() {
                         )}
                       </div>
                     </td>
+                    
+                    {/* PERBAIKAN: Kolom Pelanggan */}
+                    <td className="p-4">
+                      <div className="flex items-center gap-2">
+                        <User size={14} className="text-gray-400" />
+                        <div>
+                          <div className="font-medium text-gray-900">{tx.customers?.name || 'Umum'}</div>
+                          {tx.customers?.phone && <div className="text-xs text-gray-500">{tx.customers.phone}</div>}
+                        </div>
+                      </div>
+                    </td>
+
                     <td className="p-4 font-medium text-gray-900">{tx.cashier?.name || 'Anonim'}</td>
                     <td className="p-4 font-bold text-gray-900">
                       Rp {tx.total_amount.toLocaleString('id-ID')}
@@ -268,7 +302,6 @@ export default function TransactionsPage() {
         </div>
       </div>
 
-      {/* MODAL DETAIL STRUK */}
       {selectedTx && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
@@ -292,7 +325,18 @@ export default function TransactionsPage() {
                 <h3 className="font-bold text-xl text-gray-900">Toko Capstone</h3>
                 <p className="text-sm text-gray-500">{new Date(selectedTx.created_at).toLocaleString('id-ID')}</p>
                 <p className="text-xs font-mono text-gray-400 mt-2">ID: {selectedTx.offline_id}</p>
-                <p className="text-sm text-gray-600 mt-1">Kasir: <span className="font-semibold">{selectedTx.cashier?.name}</span></p>
+                
+                {/* PERBAIKAN: Info Kasir & Pelanggan di Modal */}
+                <div className="mt-3 p-2 bg-gray-50 rounded text-sm text-gray-600 flex flex-col gap-1">
+                  <p className="flex justify-between"><span>Kasir:</span> <span className="font-semibold">{selectedTx.cashier?.name}</span></p>
+                  <p className="flex justify-between">
+                    <span>Pelanggan:</span> 
+                    <span className="font-semibold text-right">
+                      {selectedTx.customers?.name || 'Umum'}
+                      {selectedTx.customers?.phone && <span className="block text-xs font-normal text-gray-500">{selectedTx.customers.phone}</span>}
+                    </span>
+                  </p>
+                </div>
               </div>
 
               {selectedTx.order_note && (

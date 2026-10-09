@@ -17,9 +17,10 @@ interface ReceiptParams {
   totalAmount: number;
   paymentMethod: string;
   branchName: string;
+  customerName?: string; // <--- PERBAIKAN: Parameter pelanggan
 }
 
-export function generateReceiptPDF({ transactionId, items, totalAmount, paymentMethod, branchName }: ReceiptParams) {
+export function generateReceiptPDF({ transactionId, items, totalAmount, paymentMethod, branchName, customerName }: ReceiptParams) {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -36,10 +37,18 @@ export function generateReceiptPDF({ transactionId, items, totalAmount, paymentM
   doc.text(format(new Date(), 'dd MMM yyyy HH:mm', { locale: id }), 40, 20, { align: 'center' });
   doc.text(`ID: ${transactionId.split('-')[0]}`, 40, 25, { align: 'center' }); 
   
-  doc.line(5, 28, 75, 28); 
+  // PERBAIKAN: Layout Y dinamis untuk memberi ruang pada teks nama pelanggan
+  let currentY = 29;
+  
+  if (customerName && customerName !== 'Umum' && customerName !== 'Pelanggan Member') {
+    doc.text(`Pelanggan: ${customerName}`, 40, currentY, { align: 'center' });
+    currentY += 4; // Geser garis dan tabel ke bawah jika ada nama pelanggan
+  }
+  
+  doc.line(5, currentY - 1, 75, currentY - 1); 
 
   autoTable(doc, {
-    startY: 30,
+    startY: currentY + 1,
     margin: { left: 5, right: 5 },
     theme: 'plain',
     styles: { fontSize: 9, cellPadding: 1 },
@@ -56,7 +65,7 @@ export function generateReceiptPDF({ transactionId, items, totalAmount, paymentM
   });
 
   // 2. Gunakan tipe baru untuk melakukan type-casting yang aman dari ESLint
-  const finalY = (doc as jsPDFWithPlugin).lastAutoTable?.finalY || 30;
+  const finalY = (doc as jsPDFWithPlugin).lastAutoTable?.finalY || (currentY + 1);
 
   doc.line(5, finalY + 2, 75, finalY + 2);
 

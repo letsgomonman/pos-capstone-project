@@ -5,17 +5,18 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from '@/hooks/useSession';
-import { Store, Mail, Lock, LogIn } from 'lucide-react';
+import { Store, Mail, Lock, LogIn, Eye, EyeOff } from 'lucide-react'; // <-- Tambahkan Eye, EyeOff
 
 export default function LoginPage() {
   const router = useRouter();
-  
-  // Tarik fungsi login dari Zustand yang baru
   const { login } = useSession(); 
   
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  
+  // STATE BARU: Untuk mengontrol visibilitas password
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,7 +38,6 @@ export default function LoginPage() {
 
       if (userError) throw new Error("Data profil usaha tidak ditemukan. Harap daftar ulang.");
 
-      // Panggil fungsi login dari Zustand (Otomatis simpan ke Local Storage & perbarui UI)
       login({
         userId: authData.user.id,
         name: userData.name,
@@ -49,9 +49,9 @@ export default function LoginPage() {
       alert(`Selamat datang kembali, ${userData.name}!`);
 
       if (userData.role === 'cashier') {
-        window.location.assign(window.location.origin + '/pos'); // Arahkan ke Mesin Kasir
+        window.location.assign(window.location.origin + '/pos'); 
       } else {
-        window.location.assign(window.location.origin + '/analytics'); // Arahkan ke Back-Office
+        window.location.assign(window.location.origin + '/analytics'); 
       }
 
     } catch (error: unknown) {
@@ -84,21 +84,45 @@ export default function LoginPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <div className="relative">
               <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 bg-white" placeholder="budi@email.com" />
+              <input 
+                required 
+                type="email" 
+                value={email} 
+                onChange={(e) => setEmail(e.target.value)} 
+                className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 bg-white" 
+                placeholder="budi@email.com" 
+              />
             </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
             <div className="relative">
               <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 bg-white" placeholder="••••••••" />
+              
+              {/* PERBAIKAN: Tipe input berubah secara dinamis berdasarkan state showPassword */}
+              <input 
+                required 
+                type={showPassword ? "text" : "password"} 
+                value={password} 
+                onChange={(e) => setPassword(e.target.value)} 
+                className="w-full pl-10 pr-10 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 bg-white" 
+                placeholder="••••••••" 
+              />
+              
+              {/* FITUR BARU: Tombol Toggle Mata */}
+              <button 
+                type="button" 
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
+              >
+                {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
+              </button>
             </div>
           </div>
           <button type="submit" disabled={isLoading} className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition flex items-center justify-center gap-2 mt-6">
             {isLoading ? 'Memproses...' : 'Masuk'} <LogIn size={18} />
           </button>
           
-          {/* Tautan Navigasi (Merapat ke tombol Masuk) */}
           <div className="text-center pt-2">
             <p className="text-sm text-gray-600">
               Belum memiliki akun?{' '}

@@ -6,6 +6,7 @@ import { generateReceiptPDF } from '@/lib/pdf-generator';
 import { sendWhatsAppReceipt } from '@/lib/whatsapp';
 import { useState } from 'react';
 import { useSession } from '@/hooks/useSession';
+import { supabase } from '@/lib/supabase';
 import { UserPlus, QrCode, Banknote, Tag, FileText, Trash2 } from 'lucide-react';
 
 export default function CartPanel() {
@@ -23,8 +24,16 @@ export default function CartPanel() {
   const [discountValue, setDiscountValue] = useState<number | ''>('');
   const [cashReceived, setCashReceived] = useState<number | ''>('');
   
-  // PERBAIKAN: Menambahkan 'change' dan 'method' ke dalam state struk terakhir
-  const [lastTx, setLastTx] = useState<{ id: string, amount: number, change: number, method: string, items: CartItem[] } | null>(null);
+  // PERBAIKAN: Menambahkan customerName dan customerPhone pada state struk
+  const [lastTx, setLastTx] = useState<{ 
+    id: string, 
+    amount: number, 
+    change: number, 
+    method: string, 
+    items: CartItem[],
+    customerName?: string,
+    customerPhone?: string
+  } | null>(null);
 
   const subtotal = getTotal();
   
@@ -58,18 +67,42 @@ export default function CartPanel() {
       cashierId: session.userId,
       customerName: buyerName,
       customerPhone: buyerPhone,
-      discountAmount, // <--- BARU: Kirim ke checkout
+      discountAmount,
       orderNote
     });
 
     if (result.success) {
-      // PERBAIKAN: Tangkap kembalian dan metode bayar tepat saat transaksi berhasil
+      try {
+        for (const item of items) {
+          const { data: currentInv } = await supabase
+            .from('branch_inventory')
+            .select('id, stock_qty')
+            .eq('branch_id', session.branchId)
+            .eq('product_id', item.id) 
+            .single();
+
+          if (currentInv) {
+            await supabase
+              .from('branch_inventory')
+              .update({ stock_qty: currentInv.stock_qty - item.cartQty })
+              .eq('id', currentInv.id);
+          }
+        }
+      } catch (stockError) {
+        console.error("Gagal melakukan sinkronisasi stok akhir:", stockError);
+      }
+
+      window.dispatchEvent(new Event('refreshProductGrid'));
+
+      // PERBAIKAN: Simpan data pelanggan ke state untuk struk PDF & WA
       setLastTx({ 
         id: result.offlineId, 
         amount: grandTotal, 
         change: changeAmount, 
         method: paymentMethod,
-        items: [...items] 
+        items: [...items],
+        customerName: buyerName || 'Umum',
+        customerPhone: buyerPhone || ''
       });
       
       clearCart();
@@ -87,15 +120,14 @@ export default function CartPanel() {
     if (item.cartQty > 1) updateQuantity(item.id, item.cartQty - 1);
     else removeItem(item.id);
   };
+  
   const handleIncrease = (item: CartItem) => {
-  // Asumsi: item membawa data stock_qty dari database. 
-  // Jika belum ada, Anda mungkin perlu menambahkan `stock_qty` ke interface CartItem Anda.
-  if (item.stock_qty && item.cartQty >= item.stock_qty) {
-     alert(`Stok ${item.name} tidak mencukupi! Sisa stok: ${item.stock_qty}`);
-     return;
-  }
-  updateQuantity(item.id, item.cartQty + 1);
-};
+    if (item.stock_qty && item.cartQty >= item.stock_qty) {
+       alert(`Stok ${item.name} tidak mencukupi! Sisa stok: ${item.stock_qty}`);
+       return;
+    }
+    updateQuantity(item.id, item.cartQty + 1);
+  };
 
   if (lastTx) {
     return (
@@ -103,7 +135,6 @@ export default function CartPanel() {
         <h2 className="text-2xl font-bold text-green-700 mb-2">Pembayaran Berhasil!</h2>
         <p className="mb-6 font-medium text-gray-700">Total: Rp {lastTx.amount.toLocaleString('id-ID')}</p>
         
-        {/* PERBAIKAN: Menggunakan state lastTx yang tidak akan keriset */}
         {lastTx.method === 'cash' && lastTx.change > 0 && (
           <div className="bg-white p-4 rounded-lg shadow-sm border border-green-200 w-full mb-6 text-center">
             <p className="text-sm font-bold text-gray-500 mb-1">KEMBALIAN PELANGGAN:</p>
@@ -113,18 +144,30 @@ export default function CartPanel() {
         
         <div className="flex flex-col gap-2 w-full">
           <button 
+            // PERBAIKAN: Kirim nama pelanggan ke generator PDF
             onClick={() => generateReceiptPDF({
-              transactionId: lastTx.id, items: lastTx.items, totalAmount: lastTx.amount, paymentMethod: lastTx.method.toUpperCase(), branchName: 'Pusat'
+              transactionId: lastTx.id, 
+              items: lastTx.items, 
+              totalAmount: lastTx.amount, 
+              paymentMethod: lastTx.method.toUpperCase(), 
+              branchName: 'Pusat',
+              customerName: lastTx.customerName
             })}
             className="bg-gray-800 text-white font-semibold p-3 rounded-lg hover:bg-gray-700 transition"
           >
             Unduh PDF Struk
           </button>
           <button 
+            // PERBAIKAN: Kirim nama dan nomor dari lastTx ke generator WhatsApp
             onClick={() => {
-              if (!buyerPhone) return alert("Nomor HP pelanggan kosong.");
+              if (!lastTx.customerPhone) return alert("Nomor HP pelanggan kosong.");
               sendWhatsAppReceipt({
-                customerPhone: buyerPhone, transactionId: lastTx.id, items: lastTx.items, totalAmount: lastTx.amount, branchName: 'Pusat'
+                customerPhone: lastTx.customerPhone, 
+                transactionId: lastTx.id, 
+                items: lastTx.items, 
+                totalAmount: lastTx.amount, 
+                branchName: 'Pusat',
+                customerName: lastTx.customerName
               });
             }}
             className="bg-green-600 text-white font-semibold p-3 rounded-lg hover:bg-green-700 transition"
@@ -198,7 +241,6 @@ export default function CartPanel() {
       </div>
 
       <div className="p-4 bg-white border-t border-gray-200 shrink-0">
-        
         <div className="flex items-center justify-between mb-3 bg-gray-50 p-2 rounded-lg border border-gray-200">
           <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
             <Tag size={16} /> Diskon

@@ -133,10 +133,41 @@ export default function TeamPage() {
   const handleRemoveMember = async (memberId: string, memberRole: string) => {
     if (memberRole === 'owner') return alert("Owner tidak dapat dihapus.");
     if (!confirm("Hapus pegawai ini dari toko Anda?")) return;
+    
     try {
-      const { error } = await supabase.from('user_tenants').delete().eq('id', memberId);
-      if (error) throw error;
+      // 1. TANGKAP user_id SEBELUM DIHAPUS
+      // (Kita butuh ID asli pegawai dari tabel utama 'users')
+      const { data: memberData, error: fetchErr } = await supabase
+        .from('user_tenants')
+        .select('user_id')
+        .eq('id', memberId)
+        .single();
+        
+      if (fetchErr || !memberData) throw new Error("Data pegawai tidak ditemukan.");
+
+      // 2. HAPUS KARTU AKSES (Kode asli Anda)
+      const { error: deleteErr } = await supabase
+        .from('user_tenants')
+        .delete()
+        .eq('id', memberId);
+        
+      if (deleteErr) throw deleteErr;
+
+      // 3. PERBAIKAN PERMANEN: BEBASKAN STATUS PEGAWAI
+      // Mengubah tenant_id dan branch_id menjadi null agar mereka jadi "Free Agent"
+      const { error: updateErr } = await supabase
+        .from('users')
+        .update({ 
+          tenant_id: null, 
+          branch_id: null 
+        })
+        .eq('id', memberData.user_id);
+        
+      if (updateErr) throw updateErr;
+
+      // 4. Perbarui antarmuka (UI)
       setTeam(prev => prev.filter(m => m.id !== memberId));
+      
     } catch (error) {
       console.error(error);
       alert("Gagal menghapus pegawai.");

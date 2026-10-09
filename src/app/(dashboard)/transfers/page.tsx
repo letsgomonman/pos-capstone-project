@@ -3,9 +3,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/hooks/useSession';
-import { ArrowLeftRight, Plus, X, Package, CheckCircle, Truck, FileText, TrendingUp, AlertCircle, BarChart2 } from 'lucide-react';
+import { ArrowLeftRight, Plus, X, Package, CheckCircle, Truck, FileText, TrendingUp, AlertCircle, BarChart2, Info } from 'lucide-react';
 
-// --- DEFINISI TIPE DATA ---
 interface TransferItem {
   id: string;
   product_id: string;
@@ -33,112 +32,146 @@ export default function TransfersPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [inventory, setInventory] = useState<LocalInv[]>([]);
   
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true); 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  // Form State
   const [selectedToBranch, setSelectedToBranch] = useState('');
   const [selectedProduct, setSelectedProduct] = useState('');
   const [transferQty, setTransferQty] = useState(1);
 
-  // Analitik State (ML-Ready)
+  // STATE BARU: Menyimpan data analitik (Fondasi ML) untuk Cabang Tujuan
+  const [smartRec, setSmartRec] = useState<{ destStock: number, avgSales: number } | null>(null);
+  const [isRecLoading, setIsRecLoading] = useState(false);
+
   const [analytics, setAnalytics] = useState({
     pendingTransfers: 0,
     totalVolumeTransferred: 0,
     topMovedProduct: 'Belum Ada'
   });
 
-  const fetchData = async () => {
-    if (!session?.tenantId || !session?.branchId) return;
-
-    try {
-      const { data: txData, error: txError } = await supabase
-        .from('stock_transfers')
-        .select(`
-          id, status, created_at, from_branch_id, to_branch_id,
-          from_branch:branches!from_branch_id(name),
-          to_branch:branches!to_branch_id(name),
-          stock_transfer_items ( id, product_id, qty, products(name, sku) )
-        `)
-        .eq('tenant_id', session.tenantId)
-        .order('created_at', { ascending: false });
-
-      if (txError) throw txError;
-      
-      const records = txData as unknown as TransferRecord[];
-      setTransfers(records);
-
-      // --- KALKULASI ANALITIK LOGISTIK ---
-      let pending = 0;
-      let volume = 0;
-      const productCounts: Record<string, number> = {};
-
-      records.forEach(tx => {
-        if (tx.status !== 'received') {
-          pending++;
-        } else {
-          tx.stock_transfer_items.forEach(item => {
-            volume += item.qty;
-            const pName = item.products?.name || 'Produk Dihapus';
-            productCounts[pName] = (productCounts[pName] || 0) + item.qty;
-          });
-        }
-      });
-
-      // Cari produk yang paling banyak dipindahkan
-      let topProduct = 'Belum Ada';
-      let maxQty = 0;
-      Object.entries(productCounts).forEach(([name, qty]) => {
-        if (qty > maxQty) {
-          maxQty = qty;
-          topProduct = name;
-        }
-      });
-
-      setAnalytics({
-        pendingTransfers: pending,
-        totalVolumeTransferred: volume,
-        topMovedProduct: maxQty > 0 ? `${topProduct} (${maxQty} unit)` : 'Belum Ada'
-      });
-
-      // Data Form Modal
-      const { data: branchData, error: branchError } = await supabase
-        .from('branches')
-        .select('id, name')
-        .eq('tenant_id', session.tenantId)
-        .neq('id', session.branchId);
-
-      if (branchError) throw branchError;
-      setBranches(branchData);
-
-      const { data: invData, error: invError } = await supabase
-        .from('branch_inventory')
-        .select('product_id, stock_qty, products(name, sku, base_price)')
-        .eq('branch_id', session.branchId)
-        .gt('stock_qty', 0);
-
-      if (invError) throw invError;
-      setInventory(invData as unknown as LocalInv[]);
-
-    } catch (error) {
-      console.error("Gagal memuat data logistik:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   useEffect(() => {
-    // PERBAIKAN: Membungkus fetchData dalam async function lokal
-    // untuk mencegah peringatan "set-state-in-effect" dari ESLint
-    const initData = async () => {
-      await Promise.resolve(); // Menjadikan tumpukan eksekusi 100% asynchronous
-      await fetchData();
+    const fetchLogisticsData = async () => {
+      if (!session?.tenantId || !session?.branchId) return;
+
+      try {
+        const { data: txData, error: txError } = await supabase
+          .from('stock_transfers')
+          .select(`
+            id, status, created_at, from_branch_id, to_branch_id,
+            from_branch:branches!from_branch_id(name),
+            to_branch:branches!to_branch_id(name),
+            stock_transfer_items ( id, product_id, qty, products(name, sku) )
+          `)
+          .eq('tenant_id', session.tenantId)
+          .order('created_at', { ascending: false });
+
+        if (txError) throw txError;
+        
+        const records = txData as unknown as TransferRecord[];
+        
+        let pending = 0;
+        let volume = 0;
+        const productCounts: Record<string, number> = {};
+
+        records.forEach(tx => {
+          if (tx.status !== 'received') {
+            pending++;
+          } else {
+            tx.stock_transfer_items.forEach(item => {
+              volume += item.qty;
+              const pName = item.products?.name || 'Produk Dihapus';
+              productCounts[pName] = (productCounts[pName] || 0) + item.qty;
+            });
+          }
+        });
+
+        let topProduct = 'Belum Ada';
+        let maxQty = 0;
+        Object.entries(productCounts).forEach(([name, qty]) => {
+          if (qty > maxQty) {
+            maxQty = qty;
+            topProduct = name;
+          }
+        });
+
+        const { data: branchData, error: branchError } = await supabase
+          .from('branches')
+          .select('id, name')
+          .eq('tenant_id', session.tenantId)
+          .neq('id', session.branchId);
+
+        if (branchError) throw branchError;
+        
+        const { data: invData, error: invError } = await supabase
+          .from('branch_inventory')
+          .select('product_id, stock_qty, products(name, sku, base_price)')
+          .eq('branch_id', session.branchId)
+          .gt('stock_qty', 0);
+
+        if (invError) throw invError;
+        
+        setTransfers(records);
+        setAnalytics({
+          pendingTransfers: pending,
+          totalVolumeTransferred: volume,
+          topMovedProduct: maxQty > 0 ? `${topProduct} (${maxQty} unit)` : 'Belum Ada'
+        });
+        setBranches(branchData);
+        setInventory(invData as unknown as LocalInv[]);
+
+      } catch (error) {
+        console.error("Gagal memuat data logistik:", error);
+      } finally {
+        setIsLoading(false);
+      }
     };
-    
-    initData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session]);
+
+    fetchLogisticsData();
+  }, [session, refreshTrigger]);
+
+  // LOGIKA BARU (ML Foundation): Menarik data prediktif saat input Modal berubah
+  useEffect(() => {
+    const fetchRecommendation = async () => {
+      if (!selectedToBranch || !selectedProduct) {
+        setSmartRec(null);
+        return;
+      }
+      setIsRecLoading(true);
+      try {
+        // 1. Cek Sisa Stok di Cabang Tujuan
+        const { data: destInv } = await supabase
+          .from('branch_inventory')
+          .select('stock_qty')
+          .eq('branch_id', selectedToBranch)
+          .eq('product_id', selectedProduct)
+          .single();
+
+        const destStock = destInv ? destInv.stock_qty : 0;
+
+        // 2. Cek Rata-Rata Penjualan Harian di Cabang Tujuan (Dari SQL View)
+        const { data: stats } = await supabase
+          .from('product_sales_stats')
+          .select('avg_daily_sales')
+          .eq('branch_id', selectedToBranch)
+          .eq('product_id', selectedProduct)
+          .single();
+
+        const avgSales = stats ? stats.avg_daily_sales : 0;
+
+        setSmartRec({ destStock, avgSales });
+      } catch (err) {
+        console.error("Gagal menarik data rekomendasi:", err);
+        setSmartRec({ destStock: 0, avgSales: 0 }); // Fallback
+      } finally {
+        setIsRecLoading(false);
+      }
+    };
+
+    fetchRecommendation();
+  }, [selectedToBranch, selectedProduct]);
 
   const handleCreateTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -177,12 +210,8 @@ export default function TransfersPage() {
       setSelectedToBranch('');
       setSelectedProduct('');
       setTransferQty(1);
-      
-      // Bungkus pembaruan data
-      const refreshData = async () => {
-        await fetchData();
-      };
-      refreshData();
+      setSmartRec(null);
+      setRefreshTrigger(prev => prev + 1); 
 
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -238,11 +267,7 @@ export default function TransfersPage() {
         await supabase.from('stock_transfers').update({ status: 'received', received_at: new Date().toISOString() }).eq('id', transferId);
       }
       
-      const refreshData = async () => {
-        await fetchData();
-      };
-      refreshData();
-      
+      setRefreshTrigger(prev => prev + 1);
     } catch (error: unknown) {
       console.error("Gagal update status:", error);
       alert('Terjadi kesalahan saat memproses logistik.');
@@ -275,7 +300,6 @@ export default function TransfersPage() {
         </button>
       </div>
 
-      {/* KARTU ANALITIK LOGISTIK (ML-READY) */}
       {!isLoading && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-start gap-4">
@@ -302,7 +326,6 @@ export default function TransfersPage() {
         </div>
       )}
 
-      {/* TABEL LOGISTIK */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -380,7 +403,6 @@ export default function TransfersPage() {
         </div>
       </div>
 
-      {/* MODAL BUAT TRANSFER */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
@@ -392,12 +414,6 @@ export default function TransfersPage() {
             </div>
             <form onSubmit={handleCreateTransfer} className="p-4 space-y-4">
               
-              {/* Pesan Kesiapan AI */}
-              <div className="bg-purple-50 border border-purple-100 rounded-lg p-3 text-sm text-purple-800 flex items-start gap-2">
-                <BarChart2 size={18} className="shrink-0 mt-0.5" />
-                <p>Nantinya, sistem cerdas (AI) akan otomatis merekomendasikan batas transfer optimal ke cabang tujuan berdasarkan analisis riwayat penjualan.</p>
-              </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Cabang Tujuan</label>
                 <select 
@@ -428,6 +444,21 @@ export default function TransfersPage() {
                   ))}
                 </select>
               </div>
+
+              {/* KOTAK REKOMENDASI CERDAS (FONDASI ML) MUNCUL DI SINI */}
+              {selectedToBranch && selectedProduct && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm flex items-start gap-3">
+                  <Info size={20} className="shrink-0 mt-0.5 text-blue-600" />
+                  {isRecLoading ? (
+                    <p className="text-gray-500">Menganalisis kebutuhan Cabang Tujuan...</p>
+                  ) : (
+                    <p className="text-gray-700 leading-relaxed">
+                      Sisa stok di tujuan: <span className="font-bold text-red-600">{smartRec?.destStock} unit</span>.<br/>
+                      Kecepatan jual (30 hari): <span className="font-bold text-blue-600">{smartRec?.avgSales} unit/hari</span>.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Jumlah Transfer (Qty)</label>
