@@ -6,7 +6,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { 
-  LayoutDashboard, Package, Store, ArrowLeftRight, LogOut, ReceiptText, Building2, Users
+  LayoutDashboard, Package, Store, ArrowLeftRight, LogOut, ReceiptText, Building2, Users, Landmark
 } from 'lucide-react';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -14,16 +14,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const pathname = usePathname();
 
-  // STATE BARU: Untuk menyimpan nama toko dan cabang
   const [storeName, setStoreName] = useState('Memuat Usaha...');
   const [branchName, setBranchName] = useState('');
 
-  // 1. Inisialisasi Sesi
   useEffect(() => {
     initializeSession();
   }, [initializeSession]);
 
-  // 2. Penjaga Gerbang Khusus Dasbor
   useEffect(() => {
     if (!isLoading) {
       if (!session) {
@@ -34,7 +31,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [session, isLoading, router]);
 
-  // 3. TARIK DATA NAMA TOKO & CABANG
   useEffect(() => {
     const fetchStoreInfo = async () => {
       if (!session?.tenantId || !session?.branchId) return;
@@ -72,11 +68,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: 'Manajemen Tim', href: '/team', icon: Users },
     { name: 'Transfer Stok', href: '/transfers', icon: ArrowLeftRight },
     { name: 'Laporan Transaksi', href: '/transactions', icon: ReceiptText },
+    { name: 'Keuangan (SAK EMKM)', href: '/finance', icon: Landmark },
   ];
 
   // Filter Menu Berdasarkan Jabatan
   const filteredNavItems = navItems.filter(item => {
-    const isRestrictedMenu = item.href === '/workspaces' || item.href === '/team' || item.href === '/branches';
+    // PERBAIKAN: Menambahkan '/finance' ke daftar menu yang dibatasi hanya untuk owner
+    const restrictedMenus = ['/workspaces', '/team', '/branches', '/finance'];
+    const isRestrictedMenu = restrictedMenus.includes(item.href);
+    
     if (isRestrictedMenu && session.role !== 'owner') return false;
     return true;
   });
