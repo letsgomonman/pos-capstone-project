@@ -85,10 +85,9 @@ export default function TransactionsPage() {
   }, [session]);
 
   const handleVoidTransaction = async (txId: string) => {
-    // Pastikan kita memiliki sesi dan data transaksi yang sedang dipilih
     if (!session?.userId || !selectedTx) return;
     
-    const confirmVoid = window.confirm("YAKIN BATALKAN TRANSAKSI? \n\nOmzet dari transaksi ini tidak akan dihitung, dan STOK BARANG AKAN DIKEMBALIKAN ke sistem.");
+    const confirmVoid = window.confirm("YAKIN BATALKAN TRANSAKSI? \n\nOmzet akan dibatalkan, STOK BARANG AKAN DIKEMBALIKAN, dan Jurnal Akuntansi (SAK EMKM) akan dibalik secara otomatis.");
     if (!confirmVoid) return;
 
     setIsVoiding(true);
@@ -104,9 +103,14 @@ export default function TransactionsPage() {
 
       if (error) throw error;
 
-      // 2. LOGIKA BARU: KEMBALIKAN STOK BARANG
+      // 2. KEMBALIKAN STOK BARANG KE INVENTARIS
+      let totalCOGS = 0; // Siapkan variabel untuk menghitung total HPP yang harus dibalik
       for (const item of selectedTx.transaction_items) {
-        // Tarik data stok terakhir dari database
+        // Hitung total HPP dari barang yang divoid
+        const { data: prod } = await supabase.from('products').select('base_price').eq('id', item.product_id).single();
+        const basePrice = prod?.base_price || 0;
+        totalCOGS += (basePrice * item.qty);
+
         const { data: currentInv } = await supabase
           .from('branch_inventory')
           .select('id, stock_qty')
@@ -115,7 +119,6 @@ export default function TransactionsPage() {
           .single();
 
         if (currentInv) {
-          // Tambahkan kembali stok sesuai dengan kuantitas (qty) yang dibatalkan
           await supabase
             .from('branch_inventory')
             .update({ stock_qty: currentInv.stock_qty + item.qty })
@@ -123,13 +126,80 @@ export default function TransactionsPage() {
         }
       }
 
-      // 3. Perbarui tampilan layar (UI)
-      setTransactions(prev => prev.map(tx => 
-        tx.id === txId ? { ...tx, is_void: true } : tx
-      ));
-      
+      // =========================================================================
+      // 3. JURNAL PEMBALIK (REVERSING ENTRY) - SAK EMKM
+      // =========================================================================
+      try {
+         // a. Ambil ID Buku Besar
+         const { data: accounts } = await supabase
+           .from('chart_of_accounts')
+           .select('id, account_code')
+           .eq('tenant_id', session.tenantId);
+           
+         if (accounts && accounts.length > 0) {
+           const accMap = accounts.reduce((acc, curr) => {
+             acc[curr.account_code] = curr.id;
+             return acc;
+           }, {} as Record<string, string>);
+
+           // Tentukan akun
+           const assetAccountId = selectedTx.payment_method === 'cash' ? accMap['111'] : accMap['112']; 
+           const revenueAccountId = accMap['411']; 
+           const inventoryAccountId = accMap['114']; 
+           const cogsAccountId = accMap['511']; 
+
+           if (assetAccountId && revenueAccountId && inventoryAccountId && cogsAccountId) {
+             
+             // b. Buat Header Jurnal Pembalik
+             const { data: journal, error: journalErr } = await supabase
+               .from('journals')
+               .insert({
+                 tenant_id: session.tenantId,
+                 branch_id: session.branchId,
+                 reference_type: 'VOID_TRANSACTION',
+                 reference_id: txId,
+                 description: `Pembatalan POS - Referensi ID: ${selectedTx.offline_id.split('-')[0]}`,
+                 created_by: session.userId
+               })
+               .select().single();
+
+             if (!journalErr && journal) {
+               // c. Masukkan Debit & Kredit (Posisi TERBALIK dari saat Checkout)
+               const journalLines = [];
+               
+               // Jurnal 1: Kas berkurang (Kredit), Pendapatan berkurang (Debit)
+               if (selectedTx.total_amount > 0) {
+                   journalLines.push(
+                       { journal_id: journal.id, account_id: revenueAccountId, debit: selectedTx.total_amount, credit: 0 },
+                       { journal_id: journal.id, account_id: assetAccountId, debit: 0, credit: selectedTx.total_amount }
+                   );
+               }
+               
+               // Jurnal 2: HPP berkurang (Kredit), Persediaan bertambah (Debit)
+               if (totalCOGS > 0) {
+                   journalLines.push(
+                       { journal_id: journal.id, account_id: inventoryAccountId, debit: totalCOGS, credit: 0 },
+                       { journal_id: journal.id, account_id: cogsAccountId, debit: 0, credit: totalCOGS }
+                   );
+               }
+               
+               if (journalLines.length > 0) {
+                   await supabase.from('journal_lines').insert(journalLines);
+               }
+             }
+           }
+         }
+      } catch (accErr) {
+        console.error("Gagal melakukan jurnal pembalik:", accErr);
+      }
+      // =========================================================================
+
+      setTransactions(prev => prev.map(tx => tx.id === txId ? { ...tx, is_void: true } : tx));
       setSelectedTx(prev => prev ? { ...prev, is_void: true } : null);
-      alert("Transaksi berhasil dibatalkan dan stok produk telah dikembalikan.");
+      
+      // Kirim event untuk merefresh UI Kasir/Inventory jika dibuka di tab lain
+      window.dispatchEvent(new Event('refreshProductGrid'));
+      alert("Transaksi berhasil dibatalkan. Stok dan Jurnal Akuntansi telah dikembalikan.");
       
     } catch (error: unknown) {
       console.error("Gagal membatalkan transaksi:", error);

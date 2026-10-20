@@ -100,14 +100,19 @@ export default function InventoryPage() {
         });
       }
 
-      // 4. Gabungkan Data (Enrichment) - PERBAIKAN TS/ESLint (Tanpa 'any')
+      // 4. Gabungkan Data (Enrichment) dengan Logika Prediktif (ML-Ready)
       const enrichedInventory: InventoryItem[] = (invData as unknown as RawInventoryItem[]).map(item => {
         const sold = salesMap[item.products.id] || 0;
         const stock = item.stock_qty;
         
+        // KALKULASI PREDIKTIF: Rata-rata penjualan harian (selama 30 hari)
+        const avgDailySales = sold / 30; 
+        
         let status: InventoryItem['status'] = 'Normal';
         
-        if (stock <= 5) {
+        // JIKA sisa stok saat ini lebih KECIL dari prediksi kebutuhan untuk 3 hari ke depan
+        // ATAU jika stok benar-benar habis/kritis (<= 2)
+        if (stock <= (avgDailySales * 3) || stock <= 2) {
           status = 'Low-Stock'; 
         } else if (sold >= 30) {
           status = 'Fast-Moving';

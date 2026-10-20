@@ -3,8 +3,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/hooks/useSession';
-import { useRouter } from 'next/navigation'; // <--- 1. IMPORT USEROUTER
-import { Landmark, TrendingUp, Scale, Wallet, FileText, ArrowDownRight, ArrowUpRight } from 'lucide-react';
+import { Landmark, TrendingUp, Scale, Wallet, FileText, ArrowDownRight, ArrowUpRight, Plus, X } from 'lucide-react';
 
 interface AccountBalance {
   code: string;
@@ -13,7 +12,6 @@ interface AccountBalance {
   balance: number;
 }
 
-// PERBAIKAN: Menambahkan interface spesifik untuk menggantikan 'any'
 interface JournalLineData {
   debit: number;
   credit: number;
@@ -27,26 +25,26 @@ interface JournalLineData {
 
 export default function FinanceDashboardPage() {
   const { session } = useSession();
-  const router = useRouter();
-
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshTrigger, setRefreshTrigger] = useState(0); // Trigger untuk memuat ulang data setelah input beban
   const [activeTab, setActiveTab] = useState<'laba_rugi' | 'neraca'>('laba_rugi');
   
   const [balances, setBalances] = useState<AccountBalance[]>([]);
   const [netIncome, setNetIncome] = useState(0);
 
+  // --- STATE MODAL PENGELUARAN ---
+  const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [expenseForm, setExpenseForm] = useState({
+    amount: '',
+    category: '512', // Default: Gaji & Upah
+    source: '111',   // Default: Kas Tunai
+    description: ''
+  });
+
   useEffect(() => {
     const fetchFinancialData = async () => {
       if (!session?.tenantId) return;
-
-      // ==========================================
-      // 3. PROTEKSI ROLE (RBAC BERDASARKAN COSO)
-      // ==========================================
-      if (session.role !== 'owner') {
-        alert('Akses Ditolak: Halaman Keuangan SAK EMKM ini bersifat rahasia dan hanya dapat diakses oleh Owner.');
-        router.push('/'); // Lempar kembali ke halaman utama
-        return;
-      }
 
       try {
         const { data: lines, error } = await supabase
@@ -62,7 +60,6 @@ export default function FinanceDashboardPage() {
 
         const accMap: Record<string, AccountBalance> = {};
 
-        // PERBAIKAN: Menggunakan type-casting (as unknown as JournalLineData[]) alih-alih (line: any)
         (lines as unknown as JournalLineData[] || []).forEach((line) => {
           const acc = line.chart_of_accounts;
           const code = acc.account_code;
@@ -101,7 +98,68 @@ export default function FinanceDashboardPage() {
     };
 
     fetchFinancialData();
-  }, [session]);
+  }, [session, refreshTrigger]);
+
+  // --- FUNGSI SIMPAN PENGELUARAN (JURNAL GANDA) ---
+  const handleSubmitExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session || !expenseForm.amount) return;
+    setIsSubmitting(true);
+
+    try {
+      const amount = Number(expenseForm.amount);
+
+      // 1. Ambil ID UUID asli dari kode akun yang dipilih
+      const { data: accounts } = await supabase
+        .from('chart_of_accounts')
+        .select('id, account_code')
+        .eq('tenant_id', session.tenantId)
+        .in('account_code', [expenseForm.category, expenseForm.source]);
+
+      if (!accounts || accounts.length !== 2) throw new Error("Akun buku besar tidak ditemukan.");
+
+      const debitAccountId = accounts.find(a => a.account_code === expenseForm.category)?.id;
+      const creditAccountId = accounts.find(a => a.account_code === expenseForm.source)?.id;
+
+      if (!debitAccountId || !creditAccountId) throw new Error("Gagal memetakan akun debit/kredit.");
+
+      // 2. Buat Header Jurnal
+      const { data: journal, error: journalErr } = await supabase
+        .from('journals')
+        .insert({
+          tenant_id: session.tenantId,
+          branch_id: session.branchId,
+          reference_type: 'OPERATIONAL_EXPENSE',
+          description: expenseForm.description || 'Pengeluaran Operasional',
+          created_by: session.userId
+        })
+        .select().single();
+
+      if (journalErr) throw journalErr;
+
+      // 3. Masukkan Baris Jurnal (Debit Beban, Kredit Kas/Bank)
+      const { error: lineErr } = await supabase
+        .from('journal_lines')
+        .insert([
+          { journal_id: journal.id, account_id: debitAccountId, debit: amount, credit: 0 },
+          { journal_id: journal.id, account_id: creditAccountId, debit: 0, credit: amount }
+        ]);
+
+      if (lineErr) throw lineErr;
+
+      // Sukses
+      setExpenseForm({ amount: '', category: '512', source: '111', description: '' });
+      setIsExpenseModalOpen(false);
+      setRefreshTrigger(prev => prev + 1); // Muat ulang data dasbor otomatis
+      alert("Pengeluaran berhasil dicatat dan dijurnal.");
+
+    } catch (error) {
+      console.error("Gagal mencatat pengeluaran:", error);
+      alert("Terjadi kesalahan saat menyimpan pengeluaran.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const revenues = balances.filter(a => a.category === 'Revenue');
   const cogs = balances.filter(a => a.code === '511'); 
@@ -125,17 +183,26 @@ export default function FinanceDashboardPage() {
 
   return (
     <div className="p-8 pb-20 max-w-5xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-          <Landmark className="text-blue-600" size={32} /> Keuangan & Akuntansi
-        </h1>
-        <p className="text-gray-500 mt-1">Laporan keuangan terotomatisasi berstandar SAK EMKM berbasis penjurnalan ganda.</p>
+      <div className="flex flex-col md:flex-row justify-between md:items-end gap-4 mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+            <Landmark className="text-blue-600" size={32} /> Keuangan & Akuntansi
+          </h1>
+          <p className="text-gray-500 mt-1">Laporan keuangan terotomatisasi berstandar SAK EMKM.</p>
+        </div>
+        
+        <button 
+          onClick={() => setIsExpenseModalOpen(true)}
+          className="flex items-center justify-center gap-2 bg-red-600 text-white px-5 py-2.5 rounded-lg font-bold hover:bg-red-700 transition shadow-sm"
+        >
+          <Plus size={20} /> Catat Pengeluaran
+        </button>
       </div>
 
       {!isLoading && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
-            <div className="p-4 bg-green-100 text-green-600 rounded-full"><TrendingUp size={24} /></div>
+            <div className={`p-4 rounded-full ${netIncome >= 0 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}><TrendingUp size={24} /></div>
             <div>
               <p className="text-sm font-medium text-gray-500 mb-1">Laba Bersih Berjalan</p>
               <h3 className={`text-2xl font-bold ${netIncome >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
@@ -165,19 +232,28 @@ export default function FinanceDashboardPage() {
           </div>
         </div>
       )}
-
-      <div className="flex gap-4 border-b border-gray-200 mb-6">
+      {/* NAVIGASI TAB & TOMBOL EKSPOR PDF */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-gray-200 mb-6 gap-4 print:hidden">
+        <div className="flex gap-4">
+          <button 
+            onClick={() => setActiveTab('laba_rugi')}
+            className={`pb-3 px-4 font-semibold transition text-lg flex items-center gap-2 ${activeTab === 'laba_rugi' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            <FileText size={20} /> Laporan Laba Rugi
+          </button>
+          <button 
+            onClick={() => setActiveTab('neraca')}
+            className={`pb-3 px-4 font-semibold transition text-lg flex items-center gap-2 ${activeTab === 'neraca' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            <Scale size={20} /> Laporan Posisi Keuangan (Neraca)
+          </button>
+        </div>
+        
         <button 
-          onClick={() => setActiveTab('laba_rugi')}
-          className={`pb-3 px-4 font-semibold transition text-lg flex items-center gap-2 ${activeTab === 'laba_rugi' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+          onClick={() => window.print()}
+          className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-lg font-bold hover:bg-gray-900 transition shadow-sm mb-3 sm:mb-0"
         >
-          <FileText size={20} /> Laporan Laba Rugi
-        </button>
-        <button 
-          onClick={() => setActiveTab('neraca')}
-          className={`pb-3 px-4 font-semibold transition text-lg flex items-center gap-2 ${activeTab === 'neraca' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
-        >
-          <Scale size={20} /> Laporan Posisi Keuangan (Neraca)
+          <FileText size={18} /> Unduh / Cetak PDF
         </button>
       </div>
 
@@ -297,7 +373,82 @@ export default function FinanceDashboardPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
 
+      {/* MODAL CATAT PENGELUARAN */}
+      {isExpenseModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="flex justify-between items-center p-4 border-b bg-red-50">
+              <h2 className="text-lg font-bold text-red-800">Catat Pengeluaran</h2>
+              <button onClick={() => setIsExpenseModalOpen(false)} className="text-gray-500 hover:text-gray-800">
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleSubmitExpense} className="p-5 space-y-4">
+              
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Nominal (Rp)</label>
+                <input 
+                  required 
+                  type="number" 
+                  min="1"
+                  value={expenseForm.amount} 
+                  onChange={(e) => setExpenseForm({...expenseForm, amount: e.target.value})} 
+                  className="w-full p-3 font-bold text-lg border rounded-lg focus:ring-2 focus:ring-red-500 outline-none text-gray-900" 
+                  placeholder="Contoh: 150000"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Kategori Beban</label>
+                <select 
+                  required 
+                  value={expenseForm.category} 
+                  onChange={(e) => setExpenseForm({...expenseForm, category: e.target.value})}
+                  className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-red-500 text-gray-900 bg-gray-50"
+                >
+                  <option value="512">512 - Beban Gaji & Upah</option>
+                  <option value="513">513 - Beban Listrik, Air & Internet</option>
+                  <option value="514">514 - Beban Sewa</option>
+                  <option value="515">515 - Beban Operasional Lainnya</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Sumber Dana (Uang Keluar Dari)</label>
+                <select 
+                  required 
+                  value={expenseForm.source} 
+                  onChange={(e) => setExpenseForm({...expenseForm, source: e.target.value})}
+                  className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-red-500 text-gray-900 bg-gray-50"
+                >
+                  <option value="111">111 - Kas / Tunai di Laci</option>
+                  <option value="112">112 - Saldo Bank (Transfer)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Keterangan / Catatan</label>
+                <input 
+                  required
+                  type="text" 
+                  value={expenseForm.description} 
+                  onChange={(e) => setExpenseForm({...expenseForm, description: e.target.value})} 
+                  className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-red-500 outline-none text-gray-900" 
+                  placeholder="Contoh: Bayar token listrik bulan ini"
+                />
+              </div>
+
+              <div className="pt-4 flex justify-end gap-2 border-t">
+                <button type="button" onClick={() => setIsExpenseModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 font-bold rounded-lg transition">Batal</button>
+                <button type="submit" disabled={isSubmitting} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-bold disabled:bg-gray-400 transition">
+                  {isSubmitting ? 'Mencatat...' : 'Simpan Pengeluaran'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>
