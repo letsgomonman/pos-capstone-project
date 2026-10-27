@@ -24,7 +24,7 @@ export default function TeamPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // State Modal
+  // State modal penambahan anggota
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [newEmail, setNewEmail] = useState('');
@@ -36,7 +36,7 @@ export default function TeamPage() {
       if (!session?.tenantId) return;
       setIsLoading(true);
       try {
-        // Ambil Data Tim beserta relasi nama cabangnya
+        // Muat anggota tim beserta nama cabangnya
         const { data: teamData, error: teamErr } = await supabase
           .from('user_tenants')
           .select(`id, role, branch_id, users ( id, name, email ), branches ( name )`)
@@ -45,7 +45,7 @@ export default function TeamPage() {
         if (teamErr) throw teamErr;
         setTeam(teamData as unknown as TeamMember[]);
 
-        // Ambil Data Daftar Cabang untuk form Select
+        // Muat daftar cabang untuk formulir penempatan
         const { data: branchData, error: branchErr } = await supabase
           .from('branches')
           .select('id, name')
@@ -70,16 +70,15 @@ export default function TeamPage() {
     setIsSaving(true);
 
     try {
-      // PERBAIKAN 1: Tarik juga tenant_id untuk validasi keamanan
+      // Cari akun pegawai dan validasi kepemilikan tenant
       const { data: userData, error: userErr } = await supabase
         .from('users')
-        .select('id, name, tenant_id') // <--- Tambahkan tenant_id
+        .select('id, name, tenant_id')
         .eq('email', newEmail)
         .single();
 
       if (userErr || !userData) throw new Error("Email tidak ditemukan. Pastikan karyawan sudah mendaftar (jalur Pegawai).");
 
-      // PERBAIKAN 2: Validasi Anti-Pencurian Karyawan
       if (userData.tenant_id && userData.tenant_id !== session.tenantId) {
         throw new Error("Karyawan ini sudah terdaftar dan bekerja di toko lain. Mereka harus resign (dihapus oleh pemilik sebelumnya) terlebih dahulu.");
       }
@@ -87,7 +86,7 @@ export default function TeamPage() {
       const isExist = team.some(member => member.users?.id === userData.id);
       if (isExist) throw new Error("Pegawai ini sudah menjadi bagian dari tim Anda.");
 
-      // 1. Tambahkan ke Struktur Tim (Tabel user_tenants)
+      // Tambahkan keanggotaan tim
       const { data: newMember, error: insertErr } = await supabase
         .from('user_tenants')
         .insert({
@@ -101,7 +100,7 @@ export default function TeamPage() {
       
       if (insertErr) throw insertErr;
 
-      // 2. Perbarui profil default user di tabel utama
+      // Sinkronkan profil utama pegawai
       const { error: updateErr } = await supabase.from('users')
         .update({ 
           tenant_id: session.tenantId, 
@@ -111,7 +110,7 @@ export default function TeamPage() {
         .eq('id', userData.id);
         
       if (updateErr) {
-        // Jika gagal update tabel utama, hapus kembali (Rollback) dari user_tenants agar data tidak inkonsisten
+        // Hapus keanggotaan jika sinkronisasi profil gagal
         await supabase.from('user_tenants').delete().eq('id', newMember.id);
         throw new Error("Gagal menyinkronkan profil pegawai. Silakan coba lagi.");
       }
@@ -135,8 +134,7 @@ export default function TeamPage() {
     if (!confirm("Hapus pegawai ini dari toko Anda?")) return;
     
     try {
-      // 1. TANGKAP user_id SEBELUM DIHAPUS
-      // (Kita butuh ID asli pegawai dari tabel utama 'users')
+      // Ambil ID akun sebelum menghapus keanggotaan tim
       const { data: memberData, error: fetchErr } = await supabase
         .from('user_tenants')
         .select('user_id')
@@ -145,7 +143,7 @@ export default function TeamPage() {
         
       if (fetchErr || !memberData) throw new Error("Data pegawai tidak ditemukan.");
 
-      // 2. HAPUS KARTU AKSES (Kode asli Anda)
+      // Hapus keanggotaan tim
       const { error: deleteErr } = await supabase
         .from('user_tenants')
         .delete()
@@ -153,8 +151,7 @@ export default function TeamPage() {
         
       if (deleteErr) throw deleteErr;
 
-      // 3. PERBAIKAN PERMANEN: BEBASKAN STATUS PEGAWAI
-      // Mengubah tenant_id dan branch_id menjadi null agar mereka jadi "Free Agent"
+      // Kosongkan tenant dan cabang agar pegawai dapat bergabung ke tim lain
       const { error: updateErr } = await supabase
         .from('users')
         .update({ 
@@ -165,7 +162,7 @@ export default function TeamPage() {
         
       if (updateErr) throw updateErr;
 
-      // 4. Perbarui antarmuka (UI)
+      // Perbarui daftar anggota tim
       setTeam(prev => prev.filter(m => m.id !== memberId));
       
     } catch (error) {
@@ -216,7 +213,7 @@ export default function TeamPage() {
                     </td>
                     <td className="p-4 text-gray-500">{member.users?.email}</td>
                     
-                    {/* INFO CABANG */}
+                    {/* Informasi cabang */}
                     <td className="p-4 text-gray-600">
                       {member.role === 'owner' ? (
                         <span className="text-gray-400 italic">Semua Cabang (Pusat)</span>
@@ -243,7 +240,7 @@ export default function TeamPage() {
         </div>
       </div>
 
-      {/* MODAL TAMBAH PEGAWAI */}
+      {/* Modal penambahan pegawai */}
       {isAddOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">

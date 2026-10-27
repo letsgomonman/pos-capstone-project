@@ -15,7 +15,7 @@ export default function WorkspacesPage() {
   const [workspaces, setWorkspaces] = useState<TenantData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // State Modal Tambah Usaha
+  // Form tambah usaha
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [newTenantName, setNewTenantName] = useState('');
@@ -37,8 +37,7 @@ export default function WorkspacesPage() {
 
         if (error) throw error;
         
-        // PERBAIKAN: Mengganti 'any' dengan tipe data eksplisit (unknown -> interface) 
-        // dan menambahkan perlindungan jika seandainya data 'tenants' terhapus/kosong
+        // Normalisasi data workspace dan abaikan relasi tenant yang sudah tidak tersedia.
         const formattedWorkspaces = (data || []).map((item: unknown) => {
           const row = item as { tenants: { id: string; name: string } | null };
           return {
@@ -64,14 +63,14 @@ export default function WorkspacesPage() {
     setIsSaving(true);
 
     try {
-      // 1. Buat Toko Baru
+      // Buat tenant baru.
       const { data: tenantData, error: tenantErr } = await supabase
         .from('tenants')
         .insert({ name: newTenantName })
         .select().single();
       if (tenantErr) throw tenantErr;
 
-      // 2. Buat Cabang Pusat dan TANGKAP ID-nya
+      // Buat cabang pusat.
       const { data: branchData, error: branchErr } = await supabase
         .from('branches')
         .insert({
@@ -79,10 +78,10 @@ export default function WorkspacesPage() {
           name: 'Cabang Pusat',
           address: 'Alamat belum diatur'
         })
-        .select().single(); // PERBAIKAN: Wajib ditambahkan agar menghasilkan return data
+        .select().single();
       if (branchErr) throw branchErr;
 
-      // 3. Daftarkan Owner ke tabel relasi agar toko tidak menjadi "Siluman"
+      // Hubungkan pemilik dengan tenant dan cabang.
       const { error: junctionErr } = await supabase
         .from('user_tenants')
         .insert({
@@ -93,7 +92,7 @@ export default function WorkspacesPage() {
         });
       if (junctionErr) throw junctionErr;
 
-      // 4. Perbarui antarmuka (UI)
+      // Perbarui daftar workspace dan tutup formulir.
       setWorkspaces(prev => [...prev, tenantData]);
       setIsAddOpen(false);
       setNewTenantName('');
@@ -123,7 +122,7 @@ export default function WorkspacesPage() {
 
       if (branchErr) throw new Error("Usaha ini belum memiliki cabang.");
 
-      // PERBAIKAN 1: Pindahkan lokasi Owner di tabel users agar muncul di halaman Tim!
+      // Perbarui tenant dan cabang aktif pemilik.
       const { error: updateErr } = await supabase
         .from('users')
         .update({
@@ -134,7 +133,7 @@ export default function WorkspacesPage() {
 
       if (updateErr) throw updateErr;
 
-      // Sinkronisasi Sesi & Local Storage
+      // Sinkronkan sesi dan buka halaman analitik.
       login({
         ...session,
         tenantId: tenantId,
@@ -163,7 +162,6 @@ export default function WorkspacesPage() {
       if (error) throw error;
       setWorkspaces(prev => prev.filter(w => w.id !== tenantId));
     } catch (error: unknown) {
-      // PERBAIKAN: Menggunakan variabel error agar lolos pemeriksaan ESLint
       console.error("Gagal menghapus usaha:", error);
       alert("Gagal menghapus usaha. Pastikan pengaturan ON DELETE CASCADE di database Anda sudah aktif.");
     }
@@ -215,7 +213,7 @@ export default function WorkspacesPage() {
                     <Building2 size={24} />
                   </div>
                   
-                  {/* PERBAIKAN: Tombol Hapus kini terpasang rapi di UI */}
+                  {/* Aksi hapus workspace */}
                   {!isActive && (
                     <button 
                       onClick={() => handleDeleteWorkspace(w.id, w.name)} 
@@ -234,7 +232,7 @@ export default function WorkspacesPage() {
 
                 {!isActive && (
                   <button 
-                    onClick={() => handleSwitchWorkspace(w.id)} // PERBAIKAN: Hanya mengirim w.id
+                    onClick={() => handleSwitchWorkspace(w.id)}
                     disabled={isSaving}
                     className="mt-auto pt-4 flex items-center text-blue-600 font-semibold hover:text-blue-800 transition group/btn"
                   >
@@ -247,7 +245,7 @@ export default function WorkspacesPage() {
         )}
       </div>
 
-      {/* MODAL TAMBAH USAHA */}
+      {/* Modal tambah usaha */}
       {isAddOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">

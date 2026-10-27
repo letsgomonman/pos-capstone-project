@@ -1,47 +1,49 @@
 import Dexie, { type EntityTable } from 'dexie';
 
-// 1. Tipe Data (Interface) Lokal
+// Model data: produk lokal
 export interface LocalProduct {
-  id: string; // UUID dari Supabase
+  id: string; // UUID produk dari Supabase
   sku: string;
   name: string;
   branch_price: number;
   stock_qty: number;
 }
 
+// Model data: transaksi lokal
 export interface LocalTransaction {
-  offline_id: string; // ID unik lokal (UUID v4)
-  tenant_id: string;  // BARU
-  branch_id: string;  // BARU
-  cashier_id: string; // BARU
+  offline_id: string; // ID transaksi lokal (UUID v4)
+  tenant_id: string;
+  branch_id: string;
+  cashier_id: string;
   total_amount: number;
-  discount_amount: number; // <--- BARU
+  discount_amount: number;
   order_note: string;
   payment_method: string;
-  is_synced: number; // 0 = false (offline), 1 = true (sudah dikirim ke Supabase)
+  is_synced: number; // 0 = belum tersinkronisasi, 1 = sudah dikirim ke Supabase
   created_at: string;
 }
 
+// Model data: item transaksi lokal
 export interface LocalTransactionItem {
-  id: string; // ID unik lokal
-  transaction_id: string; // Relasi ke LocalTransaction.offline_id
+  id: string; // ID item transaksi lokal
+  transaction_id: string; // Mengacu pada LocalTransaction.offline_id
   product_id: string;
   qty: number;
   unit_price: number;
   subtotal: number;
 }
 
-// 2. Definisi Skema Database Lokal
+// Database lokal untuk penyimpanan data offline
 const db = new Dexie('POS_OfflineDatabase') as Dexie & {
   products: EntityTable<LocalProduct, 'id'>;
   transactions: EntityTable<LocalTransaction, 'offline_id'>;
   transaction_items: EntityTable<LocalTransactionItem, 'id'>;
 };
 
-// 3. Konfigurasi Versi & Indexing (Penting untuk performa pencarian produk)
+// Skema database: versi dan indeks
 db.version(1).stores({
-  // Kolom pertama adalah Primary Key. Kolom berikutnya adalah index pencarian.
-  products: 'id, sku, name', 
+  // Kolom pertama adalah kunci utama; kolom berikutnya adalah indeks pencarian.
+  products: 'id, sku, name',
   transactions: 'offline_id, is_synced, created_at',
   transaction_items: 'id, transaction_id, product_id'
 });

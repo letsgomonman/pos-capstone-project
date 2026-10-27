@@ -1,34 +1,35 @@
 import { CartItem } from '@/hooks/useCartStore';
 
+// Pengiriman struk transaksi melalui WhatsApp.
 interface WAReceiptParams {
   customerPhone: string;
   transactionId: string;
   items: CartItem[];
   totalAmount: number;
   branchName: string;
-  customerName?: string; // <--- PERBAIKAN: Parameter pelanggan
+  customerName?: string;
 }
 
 export function sendWhatsAppReceipt({ customerPhone, transactionId, items, totalAmount, branchName, customerName }: WAReceiptParams) {
-  // 1. Format Nomor Telepon (Ubah 0 di depan jadi 62)
-  let phone = customerPhone.replace(/\D/g, ''); // Buang karakter non-angka
+  // Normalisasi nomor telepon.
+  let phone = customerPhone.replace(/\D/g, '');
   if (phone.startsWith('0')) {
     phone = '62' + phone.substring(1);
   }
 
-  // 2. Rangkai Teks Struk
+  // Penyusunan isi struk.
   let text = '';
-  
-  // PERBAIKAN: Sapaan personal jika nama pelanggan tersedia
+
+  // Sapaan personal pelanggan.
   if (customerName && customerName !== 'Umum' && customerName !== 'Pelanggan Member') {
     text += `Halo, *${customerName}*! 👋\n\n`;
   }
-  
+
   text += `*TERIMA KASIH TELAH BERBELANJA!*\n`;
   text += `📍 Toko Capstone - ${branchName}\n`;
   text += `🧾 No: ${transactionId.substring(0,8)}\n`;
   text += `--------------------------------\n`;
-  
+
   items.forEach(item => {
     text += `${item.name}\n`;
     text += `${item.cartQty} x Rp ${(item.branch_price).toLocaleString('id-ID')} = *Rp ${item.subtotal.toLocaleString('id-ID')}*\n`;
@@ -38,7 +39,7 @@ export function sendWhatsAppReceipt({ customerPhone, transactionId, items, total
   text += `*TOTAL: Rp ${totalAmount.toLocaleString('id-ID')}*\n\n`;
   text += `Semoga harimu menyenangkan! 😊`;
 
-  // 3. Encode URI dan buka tab baru ke WhatsApp
+  // Pembuatan URL dan pembukaan WhatsApp.
   const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
   window.open(waUrl, '_blank');
 }

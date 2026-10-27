@@ -2,27 +2,28 @@ import { db } from './dexie';
 import { supabase } from './supabase';
 
 export async function syncOfflineTransactions() {
-  // 1. Pastikan perangkat sedang terhubung ke internet
+  // Sinkronisasi transaksi offline
+  // Validasi koneksi internet
   if (!navigator.onLine) return;
 
   try {
-    // 2. Ambil semua transaksi yang belum terkirim
+    // Ambil transaksi yang belum disinkronkan
     const pendingTxs = await db.transactions.where('is_synced').equals(0).toArray();
     
-    if (pendingTxs.length === 0) return; // Tidak ada yang perlu disinkronisasi
+    if (pendingTxs.length === 0) return;
     
     console.log(`Memulai sinkronisasi ${pendingTxs.length} transaksi offline...`);
 
-    // 3. Loop dan kirim satu per satu agar jika gagal sebagian, tidak semuanya batal
+    // Proses setiap transaksi secara terpisah agar kegagalan tidak menghentikan transaksi lain
     for (const tx of pendingTxs) {
       try {
-        // Ambil item/produk dari transaksi ini di Dexie
+        // Ambil item transaksi dari database lokal
         const localItems = await db.transaction_items
           .where('transaction_id')
           .equals(tx.offline_id)
           .toArray();
 
-        // Insert Transaksi Utama ke Supabase Cloud
+        // Kirim data transaksi utama ke Supabase
         const { error: txError } = await supabase.from('transactions').insert({
           offline_id: tx.offline_id,
           tenant_id: tx.tenant_id,
@@ -36,7 +37,7 @@ export async function syncOfflineTransactions() {
 
         if (txError) throw txError;
 
-        // Format dan Insert Items ke Supabase
+        // Format dan kirim item transaksi ke Supabase
         const cloudItems = localItems.map(item => ({
           transaction_id: tx.offline_id,
           product_id: item.product_id,
@@ -49,13 +50,13 @@ export async function syncOfflineTransactions() {
         
         if (itemError) throw itemError;
 
-        // 4. JIKA BERHASIL: Update status di Dexie (Lokal) menjadi synced (1)
+        // Tandai transaksi lokal sebagai tersinkronisasi setelah semua data berhasil dikirim
         await db.transactions.update(tx.offline_id, { is_synced: 1 });
         console.log(`✅ Transaksi ${tx.offline_id} berhasil disinkronisasi.`);
 
       } catch (err) {
         console.error(`❌ Gagal sinkronisasi transaksi ${tx.offline_id}:`, err);
-        // Lanjut ke transaksi berikutnya tanpa menghentikan loop
+        // Lanjutkan ke transaksi berikutnya jika transaksi ini gagal
       }
     }
   } catch (error) {

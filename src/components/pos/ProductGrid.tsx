@@ -6,7 +6,7 @@ import { useCartStore } from '@/hooks/useCartStore';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/hooks/useSession';
 
-// Menambahkan 'category' pada respon Supabase
+// Tipe: Relasi inventori cabang dan produk dari Supabase.
 interface SupabaseJoinResponse {
   stock_qty: number;
   branch_price: number;
@@ -18,14 +18,14 @@ interface SupabaseJoinResponse {
   };
 }
 
-// Tipe bantuan agar TypeScript tidak komplain jika di file dexie.ts belum ada 'category'
+// Tipe: Produk POS dengan kategori opsional.
 type POSProduct = LocalProduct & { category?: string };
 
 export default function ProductGrid() {
   const [products, setProducts] = useState<POSProduct[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // STATE BARU: Untuk menyimpan kategori yang sedang dipilih
+  // Fitur: Menyimpan kategori produk yang dipilih.
   const [selectedCategory, setSelectedCategory] = useState('Semua'); 
   const [isLoading, setIsLoading] = useState(true);
   
@@ -38,7 +38,7 @@ export default function ProductGrid() {
   useEffect(() => {
     if (isSessionLoading) return;
     
-    // Kita pisahkan fungsinya agar bisa dipanggil ulang
+    // Fitur: Sinkronisasi katalog produk dan pemuatan data lokal.
     const fetchMasterData = async () => {
       setIsLoading(true);
       
@@ -87,9 +87,7 @@ export default function ProductGrid() {
     
     fetchMasterData();
 
-    // =====================================================================
-    // PERBAIKAN: EVENT LISTENER UNTUK MENANGKAP SINYAL DARI CART
-    // =====================================================================
+    // Fitur: Memuat ulang katalog saat menerima sinyal refresh dari keranjang.
     const handleRefresh = () => {
       console.log("Sinyal diterima! Memuat ulang stok...");
       fetchMasterData();
@@ -97,18 +95,16 @@ export default function ProductGrid() {
 
     window.addEventListener('refreshProductGrid', handleRefresh);
 
-    // Bersihkan listener saat komponen ditutup agar tidak membebani memori
     return () => {
       window.removeEventListener('refreshProductGrid', handleRefresh);
     };
 
   }, [branchId, isSessionLoading]); 
 
-  // EKSTRAK KATEGORI SECARA OTOMATIS
-  // Mengambil kategori unik dari produk yang ada di database lokal
+  // Fitur: Menyusun daftar kategori unik dari katalog lokal.
   const categories = ['Semua', ...Array.from(new Set(products.map(p => p.category || 'Umum')))];
 
-  // FILTER GANDA: Mencocokkan Pencarian (Search) DAN Kategori
+  // Fitur: Mencari produk berdasarkan nama atau SKU dan kategori.
   const filteredProducts = products.filter(p => {
     const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           p.sku.toLowerCase().includes(searchQuery.toLowerCase());
@@ -137,7 +133,7 @@ export default function ProductGrid() {
   return (
     <div className="flex flex-col h-full bg-white p-6">
       
-      {/* KOTAK PENCARIAN */}
+      {/* Blok: Pencarian produk */}
       <div className="mb-4">
         <input 
           type="text" 
@@ -148,7 +144,7 @@ export default function ProductGrid() {
         />
       </div>
 
-      {/* FILTER KATEGORI (SCROLL HORIZONTAL) */}
+      {/* Blok: Filter kategori */}
       <div className="flex gap-2 overflow-x-auto pb-4 mb-2 scrollbar-hide border-b border-gray-100 shrink-0">
         {categories.map(cat => (
           <button
@@ -165,7 +161,7 @@ export default function ProductGrid() {
         ))}
       </div>
 
-      {/* AREA GRID PRODUK */}
+      {/* Blok: Grid produk */}
       <div className="flex-1 overflow-y-auto pr-2 mt-2">
         {isLoading ? (
           <div className="flex justify-center items-center h-full text-gray-500">
@@ -192,7 +188,7 @@ export default function ProductGrid() {
                 >
                   <div className="flex justify-between items-start w-full mb-1">
                     <span className="text-xs text-gray-400">{product.sku}</span>
-                    {/* Tampilkan Label Kategori di Kartu Produk */}
+                    {/* Blok: Label kategori produk */}
                     <span className="text-[10px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full uppercase tracking-wider">
                       {product.category || 'Umum'}
                     </span>

@@ -26,19 +26,19 @@ interface JournalLineData {
 export default function FinanceDashboardPage() {
   const { session } = useSession();
   const [isLoading, setIsLoading] = useState(true);
-  const [refreshTrigger, setRefreshTrigger] = useState(0); // Trigger untuk memuat ulang data setelah input beban
+  const [refreshTrigger, setRefreshTrigger] = useState(0); // Memuat ulang data setelah pengeluaran dicatat.
   const [activeTab, setActiveTab] = useState<'laba_rugi' | 'neraca'>('laba_rugi');
   
   const [balances, setBalances] = useState<AccountBalance[]>([]);
   const [netIncome, setNetIncome] = useState(0);
 
-  // --- STATE MODAL PENGELUARAN ---
+  // Blok: State modal pengeluaran
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [expenseForm, setExpenseForm] = useState({
     amount: '',
-    category: '512', // Default: Gaji & Upah
-    source: '111',   // Default: Kas Tunai
+    category: '512', // Kategori beban default: Gaji & Upah.
+    source: '111',   // Sumber dana default: Kas Tunai.
     description: ''
   });
 
@@ -100,7 +100,7 @@ export default function FinanceDashboardPage() {
     fetchFinancialData();
   }, [session, refreshTrigger]);
 
-  // --- FUNGSI SIMPAN PENGELUARAN (JURNAL GANDA) ---
+  // Fitur: Mencatat pengeluaran melalui jurnal ganda
   const handleSubmitExpense = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!session || !expenseForm.amount) return;
@@ -109,7 +109,7 @@ export default function FinanceDashboardPage() {
     try {
       const amount = Number(expenseForm.amount);
 
-      // 1. Ambil ID UUID asli dari kode akun yang dipilih
+      // 1. Ambil ID akun dari kode akun yang dipilih.
       const { data: accounts } = await supabase
         .from('chart_of_accounts')
         .select('id, account_code')
@@ -123,7 +123,7 @@ export default function FinanceDashboardPage() {
 
       if (!debitAccountId || !creditAccountId) throw new Error("Gagal memetakan akun debit/kredit.");
 
-      // 2. Buat Header Jurnal
+      // 2. Buat header jurnal.
       const { data: journal, error: journalErr } = await supabase
         .from('journals')
         .insert({
@@ -137,7 +137,7 @@ export default function FinanceDashboardPage() {
 
       if (journalErr) throw journalErr;
 
-      // 3. Masukkan Baris Jurnal (Debit Beban, Kredit Kas/Bank)
+      // 3. Buat baris jurnal: debit beban dan kredit kas/bank.
       const { error: lineErr } = await supabase
         .from('journal_lines')
         .insert([
@@ -147,10 +147,9 @@ export default function FinanceDashboardPage() {
 
       if (lineErr) throw lineErr;
 
-      // Sukses
       setExpenseForm({ amount: '', category: '512', source: '111', description: '' });
       setIsExpenseModalOpen(false);
-      setRefreshTrigger(prev => prev + 1); // Muat ulang data dasbor otomatis
+      setRefreshTrigger(prev => prev + 1); // Muat ulang data dasbor.
       alert("Pengeluaran berhasil dicatat dan dijurnal.");
 
     } catch (error) {
@@ -232,7 +231,7 @@ export default function FinanceDashboardPage() {
           </div>
         </div>
       )}
-      {/* NAVIGASI TAB & TOMBOL EKSPOR PDF */}
+      {/* Blok: Navigasi laporan dan ekspor PDF */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-gray-200 mb-6 gap-4 print:hidden">
         <div className="flex gap-4">
           <button 
@@ -376,7 +375,7 @@ export default function FinanceDashboardPage() {
         </div>
       )}
 
-      {/* MODAL CATAT PENGELUARAN */}
+      {/* Blok: Modal pencatatan pengeluaran */}
       {isExpenseModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">

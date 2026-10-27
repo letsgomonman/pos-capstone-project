@@ -5,19 +5,22 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from '@/hooks/useSession';
-import { Store, Mail, Lock, LogIn, Eye, EyeOff } from 'lucide-react'; // <-- Tambahkan Eye, EyeOff
+import { Store, Mail, Lock, LogIn, Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage() {
+  // Navigasi dan sesi pengguna
   const router = useRouter();
-  const { login } = useSession(); 
+  const { login } = useSession();
   
+  // State formulir dan status proses masuk
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  
-  // STATE BARU: Untuk mengontrol visibilitas password
+
+  // Fitur tampil/sembunyikan kata sandi
   const [showPassword, setShowPassword] = useState(false);
 
+  // Proses autentikasi, pemuatan profil, dan pembuatan sesi
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -30,6 +33,7 @@ export default function LoginPage() {
       if (authError) throw authError;
       if (!authData.user) throw new Error("Sesi pengguna tidak valid.");
 
+      // Ambil profil usaha berdasarkan akun yang berhasil masuk
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('*')
@@ -38,6 +42,7 @@ export default function LoginPage() {
 
       if (userError) throw new Error("Data profil usaha tidak ditemukan. Harap daftar ulang.");
 
+      // Simpan identitas dan konteks usaha ke sesi aplikasi
       login({
         userId: authData.user.id,
         name: userData.name,
@@ -48,22 +53,25 @@ export default function LoginPage() {
 
       alert(`Selamat datang kembali, ${userData.name}!`);
 
+      // Arahkan pengguna ke halaman sesuai perannya
       if (userData.role === 'cashier') {
-        window.location.assign(window.location.origin + '/pos'); 
+        window.location.assign(window.location.origin + '/pos');
       } else {
-        window.location.assign(window.location.origin + '/analytics'); 
+        window.location.assign(window.location.origin + '/analytics');
       }
 
     } catch (error: unknown) {
+      // Tampilkan pesan yang sesuai jika proses masuk gagal
       let msg = "Terjadi kesalahan sistem.";
       if (error instanceof Error) msg = error.message;
       else if (error && typeof error === 'object' && 'message' in error) msg = String(error.message);
       else msg = String(error);
-      
+
       if (msg.includes('Invalid login credentials')) msg = "Email atau Password salah.";
       console.error("Login Error:", msg);
       alert("Login Gagal: " + msg);
     } finally {
+      // Pulihkan status tombol setelah proses selesai
       setIsLoading(false);
     }
   };
@@ -71,6 +79,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
+        {/* Header halaman masuk */}
         <div className="bg-blue-600 p-6 text-center text-white">
           <div className="bg-white/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
             <Store size={32} />
@@ -79,7 +88,9 @@ export default function LoginPage() {
           <p className="text-blue-100 text-sm mt-1">Kelola penjualan dan pantau usaha Anda.</p>
         </div>
 
+        {/* Formulir masuk */}
         <form onSubmit={handleLogin} className="p-6 space-y-4">
+          {/* Input alamat email */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <div className="relative">
@@ -94,12 +105,13 @@ export default function LoginPage() {
               />
             </div>
           </div>
+
+          {/* Input kata sandi dan kontrol visibilitasnya */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
             <div className="relative">
               <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              
-              {/* PERBAIKAN: Tipe input berubah secara dinamis berdasarkan state showPassword */}
+
               <input 
                 required 
                 type={showPassword ? "text" : "password"} 
@@ -108,8 +120,7 @@ export default function LoginPage() {
                 className="w-full pl-10 pr-10 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 bg-white" 
                 placeholder="••••••••" 
               />
-              
-              {/* FITUR BARU: Tombol Toggle Mata */}
+
               <button 
                 type="button" 
                 onClick={() => setShowPassword(!showPassword)}
@@ -119,10 +130,13 @@ export default function LoginPage() {
               </button>
             </div>
           </div>
+
+          {/* Tombol kirim dengan indikator proses masuk */}
           <button type="submit" disabled={isLoading} className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition flex items-center justify-center gap-2 mt-6">
             {isLoading ? 'Memproses...' : 'Masuk'} <LogIn size={18} />
           </button>
-          
+
+          {/* Tautan menuju pendaftaran akun */}
           <div className="text-center pt-2">
             <p className="text-sm text-gray-600">
               Belum memiliki akun?{' '}

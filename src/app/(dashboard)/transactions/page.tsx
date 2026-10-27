@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useSession } from '@/hooks/useSession';
 import { Search, Eye, X, Receipt, CheckCircle, AlertCircle, FileText, Trash2, Calculator, CreditCard, Banknote, PieChart, User } from 'lucide-react';
 
-// --- DEFINISI TIPE DATA ---
+// Tipe data transaksi
 interface TransactionItem {
   id: string;
   product_id: string;
@@ -26,7 +26,7 @@ interface Transaction {
   is_synced: boolean;
   is_void: boolean;
   cashier: { name: string };
-  // PERBAIKAN: Menambahkan antarmuka untuk data pelanggan
+  // Data pelanggan terkait transaksi
   customers: { name: string; phone: string } | null;
   transaction_items: TransactionItem[];
 }
@@ -92,7 +92,7 @@ export default function TransactionsPage() {
 
     setIsVoiding(true);
     try {
-      // 1. Ubah status transaksi menjadi Batal (Void)
+      // Status transaksi
       const { error } = await supabase
         .from('transactions')
         .update({ 
@@ -103,10 +103,10 @@ export default function TransactionsPage() {
 
       if (error) throw error;
 
-      // 2. KEMBALIKAN STOK BARANG KE INVENTARIS
-      let totalCOGS = 0; // Siapkan variabel untuk menghitung total HPP yang harus dibalik
+      // Pemulihan stok dan perhitungan HPP
+      let totalCOGS = 0; // Akumulasi HPP untuk jurnal pembalik.
       for (const item of selectedTx.transaction_items) {
-        // Hitung total HPP dari barang yang divoid
+        // Hitung HPP berdasarkan harga pokok produk.
         const { data: prod } = await supabase.from('products').select('base_price').eq('id', item.product_id).single();
         const basePrice = prod?.base_price || 0;
         totalCOGS += (basePrice * item.qty);
@@ -126,11 +126,9 @@ export default function TransactionsPage() {
         }
       }
 
-      // =========================================================================
-      // 3. JURNAL PEMBALIK (REVERSING ENTRY) - SAK EMKM
-      // =========================================================================
+      // Jurnal pembalik (SAK EMKM)
       try {
-         // a. Ambil ID Buku Besar
+         // Pemetaan akun buku besar
          const { data: accounts } = await supabase
            .from('chart_of_accounts')
            .select('id, account_code')
@@ -142,7 +140,7 @@ export default function TransactionsPage() {
              return acc;
            }, {} as Record<string, string>);
 
-           // Tentukan akun
+           // Akun kas, pendapatan, persediaan, dan HPP
            const assetAccountId = selectedTx.payment_method === 'cash' ? accMap['111'] : accMap['112']; 
            const revenueAccountId = accMap['411']; 
            const inventoryAccountId = accMap['114']; 
@@ -150,7 +148,7 @@ export default function TransactionsPage() {
 
            if (assetAccountId && revenueAccountId && inventoryAccountId && cogsAccountId) {
              
-             // b. Buat Header Jurnal Pembalik
+             // Header jurnal pembalik
              const { data: journal, error: journalErr } = await supabase
                .from('journals')
                .insert({
@@ -164,10 +162,10 @@ export default function TransactionsPage() {
                .select().single();
 
              if (!journalErr && journal) {
-               // c. Masukkan Debit & Kredit (Posisi TERBALIK dari saat Checkout)
+               // Baris debit dan kredit jurnal pembalik
                const journalLines = [];
                
-               // Jurnal 1: Kas berkurang (Kredit), Pendapatan berkurang (Debit)
+               // Pembalikan kas dan pendapatan
                if (selectedTx.total_amount > 0) {
                    journalLines.push(
                        { journal_id: journal.id, account_id: revenueAccountId, debit: selectedTx.total_amount, credit: 0 },
@@ -175,7 +173,7 @@ export default function TransactionsPage() {
                    );
                }
                
-               // Jurnal 2: HPP berkurang (Kredit), Persediaan bertambah (Debit)
+               // Pembalikan HPP dan persediaan
                if (totalCOGS > 0) {
                    journalLines.push(
                        { journal_id: journal.id, account_id: inventoryAccountId, debit: totalCOGS, credit: 0 },
@@ -192,12 +190,10 @@ export default function TransactionsPage() {
       } catch (accErr) {
         console.error("Gagal melakukan jurnal pembalik:", accErr);
       }
-      // =========================================================================
-
       setTransactions(prev => prev.map(tx => tx.id === txId ? { ...tx, is_void: true } : tx));
       setSelectedTx(prev => prev ? { ...prev, is_void: true } : null);
       
-      // Kirim event untuk merefresh UI Kasir/Inventory jika dibuka di tab lain
+      // Refresh tampilan kasir dan inventaris di tab lain
       window.dispatchEvent(new Event('refreshProductGrid'));
       alert("Transaksi berhasil dibatalkan. Stok dan Jurnal Akuntansi telah dikembalikan.");
       
@@ -220,7 +216,7 @@ export default function TransactionsPage() {
   const qrisPercentage = totalValidCount > 0 ? Math.round((qrisCount / totalValidCount) * 100) : 0;
   const cashPercentage = totalValidCount > 0 ? Math.round((cashCount / totalValidCount) * 100) : 0;
 
-  // PERBAIKAN: Memungkinkan pencarian berdasarkan nama pelanggan juga
+  // Pencarian transaksi berdasarkan ID struk, kasir, atau pelanggan
   const filteredTx = transactions.filter(tx => 
     tx.offline_id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     tx.cashier?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -333,7 +329,7 @@ export default function TransactionsPage() {
                       </div>
                     </td>
                     
-                    {/* PERBAIKAN: Kolom Pelanggan */}
+                    {/* Kolom pelanggan */}
                     <td className="p-4">
                       <div className="flex items-center gap-2">
                         <User size={14} className="text-gray-400" />
@@ -396,7 +392,7 @@ export default function TransactionsPage() {
                 <p className="text-sm text-gray-500">{new Date(selectedTx.created_at).toLocaleString('id-ID')}</p>
                 <p className="text-xs font-mono text-gray-400 mt-2">ID: {selectedTx.offline_id}</p>
                 
-                {/* PERBAIKAN: Info Kasir & Pelanggan di Modal */}
+                {/* Informasi kasir dan pelanggan */}
                 <div className="mt-3 p-2 bg-gray-50 rounded text-sm text-gray-600 flex flex-col gap-1">
                   <p className="flex justify-between"><span>Kasir:</span> <span className="font-semibold">{selectedTx.cashier?.name}</span></p>
                   <p className="flex justify-between">

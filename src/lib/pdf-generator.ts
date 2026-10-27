@@ -4,7 +4,7 @@ import { CartItem } from '@/hooks/useCartStore';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale'; 
 
-// 1. Buat tipe khusus yang menggabungkan jsPDF dengan properti dari autotable
+// Tipe ekstensi jsPDF untuk membaca posisi akhir tabel.
 interface jsPDFWithPlugin extends jsPDF {
   lastAutoTable?: {
     finalY: number;
@@ -17,16 +17,19 @@ interface ReceiptParams {
   totalAmount: number;
   paymentMethod: string;
   branchName: string;
-  customerName?: string; // <--- PERBAIKAN: Parameter pelanggan
+  customerName?: string;
 }
 
+// Membuat PDF struk transaksi.
 export function generateReceiptPDF({ transactionId, items, totalAmount, paymentMethod, branchName, customerName }: ReceiptParams) {
+  // Inisialisasi dokumen struk.
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
     format: [80, 250] 
   });
 
+  // Header toko dan informasi transaksi.
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
   doc.text("TOKO CAPSTONE POS", 40, 10, { align: 'center' });
@@ -37,16 +40,17 @@ export function generateReceiptPDF({ transactionId, items, totalAmount, paymentM
   doc.text(format(new Date(), 'dd MMM yyyy HH:mm', { locale: id }), 40, 20, { align: 'center' });
   doc.text(`ID: ${transactionId.split('-')[0]}`, 40, 25, { align: 'center' }); 
   
-  // PERBAIKAN: Layout Y dinamis untuk memberi ruang pada teks nama pelanggan
+  // Informasi pelanggan opsional.
   let currentY = 29;
   
   if (customerName && customerName !== 'Umum' && customerName !== 'Pelanggan Member') {
     doc.text(`Pelanggan: ${customerName}`, 40, currentY, { align: 'center' });
-    currentY += 4; // Geser garis dan tabel ke bawah jika ada nama pelanggan
+    currentY += 4;
   }
   
   doc.line(5, currentY - 1, 75, currentY - 1); 
 
+  // Rincian item transaksi.
   autoTable(doc, {
     startY: currentY + 1,
     margin: { left: 5, right: 5 },
@@ -64,7 +68,7 @@ export function generateReceiptPDF({ transactionId, items, totalAmount, paymentM
     ]),
   });
 
-  // 2. Gunakan tipe baru untuk melakukan type-casting yang aman dari ESLint
+  // Ringkasan pembayaran dan pesan penutup.
   const finalY = (doc as jsPDFWithPlugin).lastAutoTable?.finalY || (currentY + 1);
 
   doc.line(5, finalY + 2, 75, finalY + 2);
@@ -80,5 +84,6 @@ export function generateReceiptPDF({ transactionId, items, totalAmount, paymentM
   doc.text("Terima kasih telah berbelanja!", 40, finalY + 25, { align: 'center' });
   doc.text("Barang yang dibeli tidak dapat dikembalikan", 40, finalY + 29, { align: 'center' });
 
+  // Simpan PDF struk.
   doc.save(`Struk_${transactionId.substring(0,8)}.pdf`);
 }

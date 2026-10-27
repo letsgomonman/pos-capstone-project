@@ -1,26 +1,26 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
-// Memaksa Next.js agar tidak melakukan cache pada API ini
+// Fitur Seed Data: nonaktifkan cache agar endpoint selalu dijalankan.
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    // 1. Buat Data Tenant (Toko Induk)
+    // 1. Seed tenant
     const { data: tenant, error: tErr } = await supabase
       .from('tenants')
       .insert({ name: 'Toko Capstone Jaya' })
       .select().single();
     if (tErr) throw tErr;
 
-    // 2. Buat Data Branch (Cabang)
+    // 2. Seed cabang
     const { data: branch, error: bErr } = await supabase
       .from('branches')
       .insert({ tenant_id: tenant.id, name: 'Cabang Pusat', address: 'Jl. Kampus No. 1' })
       .select().single();
     if (bErr) throw bErr;
 
-    // 3. Buat Akun Kasir (User)
+    // 3. Seed pengguna kasir
     const { data: cashier, error: cErr } = await supabase
       .from('users')
       .insert({
@@ -29,12 +29,12 @@ export async function GET() {
         role: 'cashier',
         name: 'Kasir Default',
         email: 'kasir@capstone.com',
-        password_hash: 'hashed_password_sementara' // Nanti diganti Supabase Auth
+        password_hash: 'hashed_password_sementara' // TODO: Ganti dengan Supabase Auth.
       })
       .select().single();
     if (cErr) throw cErr;
 
-    // 4. Buat Master Produk
+    // 4. Seed produk
     const { data: products, error: pErr } = await supabase
       .from('products')
       .insert([
@@ -46,12 +46,12 @@ export async function GET() {
       .select();
     if (pErr) throw pErr;
 
-    // 5. Masukkan Stok Produk ke Cabang (Branch Inventory)
+    // 5. Seed inventaris cabang
     const inventoryData = products.map(p => ({
       branch_id: branch.id,
       product_id: p.id,
-      stock_qty: 100, // Beri stok awal 100 per barang
-      branch_price: p.base_price // Harga cabang sama dengan harga dasar
+      stock_qty: 100, // Tetapkan stok awal 100 unit per produk.
+      branch_price: p.base_price // Gunakan harga dasar sebagai harga cabang.
     }));
     
     const { error: invErr } = await supabase
@@ -59,7 +59,7 @@ export async function GET() {
       .insert(inventoryData);
     if (invErr) throw invErr;
 
-    // Berhasil! Kembalikan ID yang dibuat agar bisa disalin
+    // Kembalikan ID hasil seed.
     return NextResponse.json({
       message: "Master Data berhasil di-generate!",
       IMPORTANT_IDS: {
@@ -70,7 +70,7 @@ export async function GET() {
     });
 
   } catch (error: unknown) {
-        // PERBAIKAN: Menggunakan 'unknown' lalu mengecek apakah itu Error object
+        // Tangani error yang tipenya belum diketahui.
         const errorMessage = error instanceof Error ? error.message : String(error);
         return NextResponse.json({ error: errorMessage }, { status: 500 });
   }

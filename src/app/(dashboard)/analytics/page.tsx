@@ -13,7 +13,7 @@ interface ChartData { name: string; total: number; }
 interface HourlyData { hour: string; count: number; }
 interface TopProduct { name: string; sold: number; }
 
-// PERBAIKAN: Perluas interface agar menerima objek tunggal ATAU array
+// Data: Item transaksi untuk analitik
 interface TransactionItemData {
   qty: number;
   products?: { name: string } | { name: string }[] | null;
@@ -25,10 +25,10 @@ export default function AnalyticsDashboard() {
   const [selectedFilter, setSelectedFilter] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(true);
 
-  // Metrik Utama
+  // Data: Metrik utama
   const [stats, setStats] = useState({ totalRevenue: 0, totalTransactions: 0, lowStockItems: 0 });
   
-  // Metrik Grafik (ML-Ready Data)
+  // Data: Tren grafik
   const [revenueTrend, setRevenueTrend] = useState<ChartData[]>([]);
   const [hourlyTrend, setHourlyTrend] = useState<HourlyData[]>([]);
   const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
@@ -41,7 +41,7 @@ export default function AnalyticsDashboard() {
       try {
         let activeBranchIds: string[] = [];
 
-        // 1. FILTER CABANG (Sesuai Role)
+        // Filter cabang berdasarkan peran pengguna
         if (session.role === 'owner') {
           const { data: branchData } = await supabase.from('branches').select('id, name').eq('tenant_id', session.tenantId);
           setBranches(branchData || []);
@@ -50,13 +50,13 @@ export default function AnalyticsDashboard() {
           activeBranchIds = [session.branchId];
         }
 
-        // Ambil Batas Waktu 7 Hari Terakhir
+        // Rentang waktu analitik: tujuh hari terakhir
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
         sevenDaysAgo.setHours(0, 0, 0, 0);
         const isoStartDate = sevenDaysAgo.toISOString();
 
-        // 2. QUERY BERSARANG
+        // Query transaksi untuk analitik
         let txQuery = supabase
           .from('transactions')
           .select(`
@@ -73,20 +73,20 @@ export default function AnalyticsDashboard() {
         const { data: txData, error: txError } = await txQuery;
         if (txError) throw txError;
 
-        // 3. PENGOLAHAN DATA MENTAH MENJADI INSIGHT
+        // Olah transaksi menjadi data analitik
         let totalRev = 0;
         const revMap: Record<string, number> = {};
         const hourMap: Record<string, number> = {};
         const prodMap: Record<string, number> = {};
 
-        // Inisialisasi label 7 hari terakhir agar grafik tidak putus
+        // Isi label tren pendapatan untuk tujuh hari terakhir
         for(let i = 6; i >= 0; i--) {
           const d = new Date();
           d.setDate(d.getDate() - i);
           revMap[d.toLocaleDateString('id-ID', { month: 'short', day: 'numeric' })] = 0;
         }
 
-        // Inisialisasi label 24 jam
+        // Isi label distribusi transaksi per jam
         for(let i = 8; i <= 22; i++) { 
           hourMap[`${i.toString().padStart(2, '0')}:00`] = 0;
         }
@@ -101,17 +101,17 @@ export default function AnalyticsDashboard() {
           if (revMap[dateStr] !== undefined) revMap[dateStr] += Number(tx.total_amount);
           if (hourMap[hourStr] !== undefined) hourMap[hourStr] += 1;
 
-          // PERBAIKAN TS2352: Gunakan 'as unknown' ganda sesuai saran compiler
+          // Baca item transaksi untuk menghitung produk terlaris
           const items = (tx.transaction_items as unknown as TransactionItemData[]) || [];
           items.forEach((item) => {
-            // Amankan data jika seandainya Supabase merespons dengan array
+            // Tangani relasi produk yang dikembalikan sebagai objek atau array
             const prod = Array.isArray(item.products) ? item.products[0] : item.products;
             const pName = prod?.name || 'Produk Dihapus';
             prodMap[pName] = (prodMap[pName] || 0) + item.qty;
           });
         });
 
-        // 4. HITUNG STOK MENIPIS
+        // Hitung jumlah stok menipis pada cabang aktif
         let lowStockCount = 0;
         if (activeBranchIds.length > 0) {
           const { count } = await supabase.from('branch_inventory').select('*', { count: 'exact', head: true }).in('branch_id', activeBranchIds).lt('stock_qty', 10);
@@ -137,7 +137,7 @@ export default function AnalyticsDashboard() {
 
   return (
     <div className="p-8 pb-20">
-      {/* HEADER & FILTER */}
+      {/* Tampilan: Header dan filter cabang */}
       <header className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Ringkasan Data (7 Hari Terakhir)</h1>
@@ -154,7 +154,7 @@ export default function AnalyticsDashboard() {
         )}
       </header>
 
-      {/* KARTU METRIK UTAMA */}
+      {/* Tampilan: Kartu metrik utama */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-start gap-4">
           <div className="p-3 bg-green-100 text-green-600 rounded-lg"><TrendingUp size={24} /></div>
@@ -181,7 +181,7 @@ export default function AnalyticsDashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* GRAFIK 1: Tren Pendapatan */}
+        {/* Tampilan: Grafik tren pendapatan harian */}
         <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
           <div className="flex items-center gap-2 mb-6">
             <BarChart3 size={20} className="text-blue-600"/>
@@ -208,7 +208,7 @@ export default function AnalyticsDashboard() {
 
         <div className="flex flex-col gap-6">
           
-          {/* TABEL 1: Top 5 Produk */}
+          {/* Tampilan: Daftar lima produk terlaris */}
           <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex-1">
             <div className="flex items-center gap-2 mb-4">
               <Package size={20} className="text-purple-600"/>
@@ -231,7 +231,7 @@ export default function AnalyticsDashboard() {
             )}
           </div>
 
-          {/* GRAFIK 2: Jam Sibuk */}
+          {/* Tampilan: Grafik distribusi jam sibuk */}
           <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex-1">
             <div className="flex items-center gap-2 mb-4">
               <Clock size={20} className="text-orange-600"/>

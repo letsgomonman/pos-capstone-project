@@ -14,7 +14,7 @@ export default function POSPage() {
   const router = useRouter();
   const [isClosing, setIsClosing] = useState(false);
 
-  // STATE BARU: Untuk menyimpan nama toko dan cabang
+  // Informasi toko dan cabang: state
   const [storeName, setStoreName] = useState('Memuat Toko...');
   const [branchName, setBranchName] = useState('');
 
@@ -32,19 +32,19 @@ export default function POSPage() {
     }
   }, [session, isLoading, router]);
 
-  // LOGIKA BARU: Menarik nama Usaha (Tenant) dan Cabang (Branch) dari database
+  // Informasi toko dan cabang: pemuatan data
   useEffect(() => {
     const fetchStoreInfo = async () => {
       if (!session?.tenantId || !session?.branchId) return;
       try {
-        // Tarik nama Usaha/Tenant
+        // Informasi toko dan cabang: nama usaha
         const { data: tenant } = await supabase
           .from('tenants')
           .select('name')
           .eq('id', session.tenantId)
           .single();
 
-        // Tarik nama Cabang
+        // Informasi toko dan cabang: nama cabang
         const { data: branch } = await supabase
           .from('branches')
           .select('name')
@@ -131,7 +131,7 @@ export default function POSPage() {
         <div className="flex items-center gap-4">
           <div className="bg-blue-600 text-white font-bold px-3 py-1 rounded">POS</div>
           
-          {/* PENERAPAN NAMA DINAMIS */}
+          {/* Informasi toko dan cabang: header */}
           <h1 className="font-semibold text-lg text-gray-800 hidden md:block">
             {storeName} {branchName && <span className="text-gray-500 font-normal"> - {branchName}</span>}
           </h1>

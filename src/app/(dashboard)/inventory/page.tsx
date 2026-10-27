@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useSession } from '@/hooks/useSession';
 import { Search, Plus, Edit2, X, Box, Trash2, TrendingUp, AlertTriangle, ThermometerSnowflake, Filter, Package } from 'lucide-react';
 
-// 1. Tipe Data Mentah (Dari Database)
+// Tipe data inventaris dari database
 interface RawInventoryItem {
   id: string; 
   stock_qty: number;
@@ -19,7 +19,7 @@ interface RawInventoryItem {
   };
 }
 
-// 2. Tipe Data Diperkaya (Ditambah Analitik ML-Ready)
+// Tipe data inventaris dengan analitik penjualan
 interface InventoryItem extends RawInventoryItem {
   sold30Days: number;
   status: 'Fast-Moving' | 'Slow-Moving' | 'Low-Stock' | 'Normal';
@@ -36,13 +36,13 @@ export default function InventoryPage() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // State Form Tambah
+  // Form tambah produk
   const [newName, setNewName] = useState('');
   const [newCategory, setNewCategory] = useState('');
   const [newPrice, setNewPrice] = useState<number | string>('');
   const [newStock, setNewStock] = useState<number | string>('');
   
-  // State Form Edit
+  // Form edit inventaris
   const [editId, setEditId] = useState('');
   const [editProductId, setEditProductId] = useState(''); 
   const [editName, setEditName] = useState('');
@@ -50,7 +50,7 @@ export default function InventoryPage() {
   const [editPrice, setEditPrice] = useState<number | string>('');
   const [editStock, setEditStock] = useState<number | string>('');
 
-  // Mengambil kategori unik
+  // Kategori inventaris yang tersedia
   const uniqueCategories: string[] = Array.from(
     new Set(
       inventory
@@ -64,7 +64,7 @@ export default function InventoryPage() {
     setIsLoading(true);
     
     try {
-      // 1. Tarik data inventaris dan produk induk
+      // Ambil data inventaris dan produk
       const { data: invData, error: invErr } = await supabase
         .from('branch_inventory')
         .select(`
@@ -78,7 +78,7 @@ export default function InventoryPage() {
 
       if (invErr) throw invErr;
 
-      // 2. Tarik Data Penjualan 30 Hari Terakhir (Bahan Baku ML)
+      // Ambil data penjualan selama 30 hari terakhir
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       
@@ -91,7 +91,7 @@ export default function InventoryPage() {
 
       if (salesErr) throw salesErr;
 
-      // 3. Hitung Kalkulasi Pergerakan (Velocity)
+      // Hitung total penjualan per produk
       const salesMap: Record<string, number> = {};
       if (salesData) {
         salesData.forEach((sale: unknown) => {
@@ -100,18 +100,17 @@ export default function InventoryPage() {
         });
       }
 
-      // 4. Gabungkan Data (Enrichment) dengan Logika Prediktif (ML-Ready)
+      // Gabungkan data inventaris dan analitik penjualan
       const enrichedInventory: InventoryItem[] = (invData as unknown as RawInventoryItem[]).map(item => {
         const sold = salesMap[item.products.id] || 0;
         const stock = item.stock_qty;
         
-        // KALKULASI PREDIKTIF: Rata-rata penjualan harian (selama 30 hari)
+        // Hitung rata-rata penjualan harian selama 30 hari
         const avgDailySales = sold / 30; 
         
         let status: InventoryItem['status'] = 'Normal';
         
-        // JIKA sisa stok saat ini lebih KECIL dari prediksi kebutuhan untuk 3 hari ke depan
-        // ATAU jika stok benar-benar habis/kritis (<= 2)
+        // Tandai stok rendah jika kurang dari kebutuhan 3 hari atau tersisa maksimal 2 unit
         if (stock <= (avgDailySales * 3) || stock <= 2) {
           status = 'Low-Stock'; 
         } else if (sold >= 30) {
@@ -255,7 +254,7 @@ export default function InventoryPage() {
 
   return (
     <div className="p-8">
-      {/* Header */}
+      {/* Header inventaris */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Master Inventory</h1>
@@ -269,7 +268,7 @@ export default function InventoryPage() {
         </button>
       </div>
 
-      {/* Search Bar & Filter AI-Ready */}
+      {/* Pencarian dan filter inventaris */}
       <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-6 flex flex-col md:flex-row gap-4 justify-between items-center">
         <div className="relative w-full md:max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
@@ -297,7 +296,7 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* Table Data */}
+      {/* Tabel inventaris */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -394,7 +393,7 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* MODAL TAMBAH PRODUK */}
+      {/* Modal tambah produk */}
       {isAddOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
@@ -446,7 +445,7 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* MODAL EDIT PRODUK */}
+      {/* Modal edit inventaris */}
       {isEditOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">

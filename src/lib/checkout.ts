@@ -20,7 +20,7 @@ export async function processCheckout(payload: CheckoutPayload) {
   let customerId = null;
 
   try {
-    // --- 1. CRM & LOGIKA RFM ---
+    // CRM pelanggan
     if (navigator.onLine && (payload.customerPhone || payload.customerName)) {
       let existingCust = null;
 
@@ -60,7 +60,7 @@ export async function processCheckout(payload: CheckoutPayload) {
       }
     }
 
-    // --- 2. SIMPAN KE LOKAL (Offline-First) ---
+    // Simpan transaksi lokal (offline-first)
     await db.transactions.add({
       offline_id: offlineId,
       tenant_id: payload.tenantId,    
@@ -74,7 +74,7 @@ export async function processCheckout(payload: CheckoutPayload) {
       created_at: new Date().toISOString(),
     });
 
-    // --- 3. SIMPAN KE CLOUD (Jika Online) ---
+    // Sinkronkan transaksi ke cloud (online)
     if (navigator.onLine) {
        const { data: tx, error: txErr } = await supabase
          .from('transactions')
@@ -104,12 +104,10 @@ export async function processCheckout(payload: CheckoutPayload) {
 
        await supabase.from('transaction_items').insert(txItems);
        
-       // Tandai lokal sudah tersinkronisasi
+       // Tandai transaksi lokal sudah tersinkronisasi
        await db.transactions.where('offline_id').equals(offlineId).modify({ is_synced: 1 });
 
-       // =========================================================================
-       // 4. MODUL AKUNTANSI (SAK EMKM) - JURNAL OTOMATIS
-       // =========================================================================
+       // Buat jurnal otomatis akuntansi (SAK EMKM)
        try {
          console.log("[AKUNTANSI] 1. Mencari akun untuk Tenant ID:", payload.tenantId);
          
@@ -206,7 +204,6 @@ export async function processCheckout(payload: CheckoutPayload) {
        } catch (accError) {
          console.error("[AKUNTANSI] FATAL ERROR Gagal mencatat jurnal akuntansi:", accError);
        }
-       // =========================================================================
     }
 
     return { success: true, offlineId };

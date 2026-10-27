@@ -71,9 +71,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: 'Keuangan (SAK EMKM)', href: '/finance', icon: Landmark },
   ];
 
-  // Filter Menu Berdasarkan Jabatan
+  // Navigasi berdasarkan peran
   const filteredNavItems = navItems.filter(item => {
-    // PERBAIKAN: Menambahkan '/finance' ke daftar menu yang dibatasi hanya untuk owner
+    // Menu khusus owner
     const restrictedMenus = ['/workspaces', '/team', '/branches', '/finance'];
     const isRestrictedMenu = restrictedMenus.includes(item.href);
     
@@ -84,10 +84,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex h-screen bg-gray-50 text-gray-900">
       
-      {/* SIDEBAR */}
+      {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-gray-200 flex flex-col hidden md:flex shrink-0">
         
-        {/* HEADER SIDEBAR - MENAMPILKAN INFO USAHA & CABANG */}
+        {/* Informasi usaha dan cabang */}
         <div className="h-20 flex flex-col justify-center px-6 border-b border-gray-200 bg-blue-50/30">
           <span className="text-blue-700 font-bold text-lg tracking-tight truncate" title={storeName}>
             {storeName}
@@ -100,7 +100,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
 
-        {/* NAVIGASI MENU */}
+        {/* Navigasi menu */}
         <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
           {filteredNavItems.map((item) => {
             const isActive = pathname?.startsWith(item.href);
@@ -120,7 +120,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           })}
         </nav>
 
-        {/* PROFIL USER & LOGOUT */}
+        {/* Profil pengguna dan keluar */}
         <div className="p-4 border-t border-gray-200 bg-gray-50/50">
           <div className="mb-4 px-3">
             <p className="text-sm font-bold text-gray-800 truncate">{session.name}</p>
@@ -135,7 +135,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
 
-      {/* MAIN CONTENT */}
+      {/* Konten utama */}
       <main className="flex-1 overflow-y-auto">
         {children}
       </main>

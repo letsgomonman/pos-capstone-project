@@ -24,7 +24,7 @@ export default function CartPanel() {
   const [discountValue, setDiscountValue] = useState<number | ''>('');
   const [cashReceived, setCashReceived] = useState<number | ''>('');
   
-  // PERBAIKAN: Menambahkan customerName dan customerPhone pada state struk
+  // Data pelanggan untuk fitur struk
   const [lastTx, setLastTx] = useState<{ 
     id: string, 
     amount: number, 
@@ -144,7 +144,7 @@ export default function CartPanel() {
         
         <div className="flex flex-col gap-2 w-full">
           <button 
-            // PERBAIKAN: Kirim nama pelanggan ke generator PDF
+            // Fitur unduh struk PDF
             onClick={() => generateReceiptPDF({
               transactionId: lastTx.id, 
               items: lastTx.items, 
@@ -158,7 +158,7 @@ export default function CartPanel() {
             Unduh PDF Struk
           </button>
           <button 
-            // PERBAIKAN: Kirim nama dan nomor dari lastTx ke generator WhatsApp
+            // Fitur kirim struk WhatsApp
             onClick={() => {
               if (!lastTx.customerPhone) return alert("Nomor HP pelanggan kosong.");
               sendWhatsAppReceipt({

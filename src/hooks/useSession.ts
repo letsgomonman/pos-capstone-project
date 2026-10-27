@@ -21,13 +21,14 @@ export const useSession = create<SessionStore>((set, get) => ({
   session: null,
   isLoading: true,
 
-  // Fungsi Login sekarang otomatis menyimpan pilihan ke memori browser
+  // Login simpan konteks tenant dan cabang yang aktif.
   login: (data) => {
     localStorage.setItem('active_tenant', data.tenantId);
     localStorage.setItem('active_branch', data.branchId);
     set({ session: data, isLoading: false });
   },
 
+  // Logout akhiri autentikasi dan hapus konteks yang tersimpan.
   logout: async () => {
     set({ isLoading: true });
     try {
@@ -41,6 +42,7 @@ export const useSession = create<SessionStore>((set, get) => ({
     }
   },
 
+  // Inisialisasi pulihkan sesi autentikasi dan data pengguna.
   initializeSession: async () => {
     set({ isLoading: true });
     
@@ -65,8 +67,7 @@ export const useSession = create<SessionStore>((set, get) => ({
       let activeTenant = userData.tenant_id;
       let activeBranch = userData.branch_id;
 
-      // KUNCI MULTI-TENANT: 
-      // Hanya Owner yang diizinkan memulihkan sesi usaha dari memori browser
+      // Multi-tenant hanya owner yang dapat memulihkan konteks tenant dan cabang tersimpan.
       if (userData.role === 'owner') {
         const savedTenant = localStorage.getItem('active_tenant');
         const savedBranch = localStorage.getItem('active_branch');

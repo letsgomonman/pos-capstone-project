@@ -42,7 +42,7 @@ export default function TransfersPage() {
   const [selectedProduct, setSelectedProduct] = useState('');
   const [transferQty, setTransferQty] = useState(1);
 
-  // STATE BARU: Menyimpan data analitik (Fondasi ML) untuk Cabang Tujuan
+  // Rekomendasi Transfer: simpan data analitik cabang tujuan.
   const [smartRec, setSmartRec] = useState<{ destStock: number, avgSales: number } | null>(null);
   const [isRecLoading, setIsRecLoading] = useState(false);
 
@@ -132,7 +132,7 @@ export default function TransfersPage() {
     fetchLogisticsData();
   }, [session, refreshTrigger]);
 
-  // LOGIKA BARU (ML Foundation): Menarik data prediktif saat input Modal berubah
+  // Rekomendasi Transfer: muat data saat cabang tujuan atau produk berubah.
   useEffect(() => {
     const fetchRecommendation = async () => {
       if (!selectedToBranch || !selectedProduct) {
@@ -141,7 +141,7 @@ export default function TransfersPage() {
       }
       setIsRecLoading(true);
       try {
-        // 1. Cek Sisa Stok di Cabang Tujuan
+        // Rekomendasi Transfer: ambil stok cabang tujuan.
         const { data: destInv } = await supabase
           .from('branch_inventory')
           .select('stock_qty')
@@ -151,7 +151,7 @@ export default function TransfersPage() {
 
         const destStock = destInv ? destInv.stock_qty : 0;
 
-        // 2. Cek Rata-Rata Penjualan Harian di Cabang Tujuan (Dari SQL View)
+        // Rekomendasi Transfer: ambil rata-rata penjualan harian cabang tujuan.
         const { data: stats } = await supabase
           .from('product_sales_stats')
           .select('avg_daily_sales')
@@ -164,7 +164,7 @@ export default function TransfersPage() {
         setSmartRec({ destStock, avgSales });
       } catch (err) {
         console.error("Gagal menarik data rekomendasi:", err);
-        setSmartRec({ destStock: 0, avgSales: 0 }); // Fallback
+        setSmartRec({ destStock: 0, avgSales: 0 }); // Rekomendasi Transfer: gunakan nilai default.
       } finally {
         setIsRecLoading(false);
       }
@@ -445,7 +445,7 @@ export default function TransfersPage() {
                 </select>
               </div>
 
-              {/* KOTAK REKOMENDASI CERDAS (FONDASI ML) MUNCUL DI SINI */}
+              {/* Rekomendasi Transfer: panel analitik cabang tujuan. */}
               {selectedToBranch && selectedProduct && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm flex items-start gap-3">
                   <Info size={20} className="shrink-0 mt-0.5 text-blue-600" />

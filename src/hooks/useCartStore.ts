@@ -5,7 +5,7 @@ export interface CartItem {
   id: string;
   sku: string;
   name: string;
-  branch_price: number; // Hanya gunakan harga jual cabang
+  branch_price: number;
   cartQty: number;
   subtotal: number;
   stock_qty: number;
@@ -23,6 +23,7 @@ interface CartState {
 export const useCartStore = create<CartState>((set, get) => ({
   items: [],
   
+  // Tambah produk ke keranjang atau naikkan jumlah produk yang sudah ada.
   addItem: (product: LocalProduct) => set((state) => {
     const existingItem = state.items.find(i => i.id === product.id);
     
@@ -48,6 +49,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     };
   }),
 
+  // Perbarui jumlah produk dan hitung ulang subtotalnya.
   updateQuantity: (id: string, qty: number) => set((state) => ({
     items: state.items.map(item =>
       item.id === id
@@ -56,12 +58,15 @@ export const useCartStore = create<CartState>((set, get) => ({
     ),
   })),
 
+  // Hapus produk tertentu dari keranjang.
   removeItem: (id: string) => set((state) => ({
     items: state.items.filter(item => item.id !== id),
   })),
 
+  // Kosongkan seluruh item keranjang.
   clearCart: () => set({ items: [] }),
 
+  // Hitung total transaksi dari subtotal seluruh item.
   getTotal: () => {
     return get().items.reduce((total, item) => total + item.subtotal, 0);
   },

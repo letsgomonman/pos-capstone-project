@@ -86,7 +86,7 @@ export default function BranchesPage() {
     setEditBranchId(branch.id); setEditBranchName(branch.name); setEditBranchAddress(branch.address || ''); setIsEditOpen(true);
   };
 
-  // FITUR BARU 1: HAPUS CABANG
+  // Fitur: Menghapus cabang
   const handleDeleteBranch = async (branchId: string, branchName: string) => {
     if (branches.length <= 1) {
       alert("Usaha harus memiliki minimal 1 cabang.");
@@ -107,14 +107,14 @@ export default function BranchesPage() {
     }
   };
 
-  // FITUR BERALIH CABANG AKTIF
+  // Fitur: Beralih cabang aktif
   const handleSwitchBranch = (branchId: string) => {
     if (!session || session.branchId === branchId) return;
     
-    // Perbarui sesi dengan branchId yang baru (Otomatis tersimpan ke localStorage)
+    // Perbarui sesi dengan ID cabang baru; perubahan tersimpan otomatis ke localStorage.
     login({ ...session, branchId });
     
-    // Hard reload agar dasbor membaca data cabang yang baru
+    // Muat ulang halaman agar dasbor membaca data dari cabang baru.
     window.location.assign(window.location.origin + '/branches');
   };
 
@@ -148,7 +148,7 @@ export default function BranchesPage() {
                     <Store size={24} />
                   </div>
                   
-                  {/* Tombol Aksi Kanan Atas */}
+                  {/* Aksi cabang */}
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
                     <button onClick={() => openEditModal(b)} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="Edit">
                       <Edit2 size={16} />
@@ -179,8 +179,7 @@ export default function BranchesPage() {
         )}
       </div>
 
-      {/* Modal Tambah & Edit (Sama dengan sebelumnya, dihilangkan untuk efisiensi baris instruksi. Anda bisa menyalin dari kode Anda sebelumnya) */}
-      {/* MODAL TAMBAH */}
+      {/* Modal tambah cabang */}
       {isAddOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
@@ -203,7 +202,7 @@ export default function BranchesPage() {
         </div>
       )}
 
-      {/* MODAL EDIT */}
+      {/* Modal edit cabang */}
       {isEditOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
