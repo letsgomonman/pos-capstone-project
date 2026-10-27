@@ -2,17 +2,18 @@
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Store, User, Mail, Lock, ArrowRight, UserSquare2, Eye, EyeOff } from 'lucide-react'; 
+import { Store, User, Mail, Lock, ArrowRight, UserSquare2, Eye, EyeOff, CheckCircle, AlertCircle } from 'lucide-react'; 
 
 export default function RegisterPage() {
-  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
-  const [isOwner, setIsOwner] = useState(true); // Mode pendaftaran: pemilik atau pegawai
+  const [isOwner, setIsOwner] = useState(true); 
   
-  // Visibilitas password
   const [showPassword, setShowPassword] = useState(false);
+  
+  // State untuk menangani umpan balik antarmuka
+  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [errorMessage, setErrorMessage] = useState('');
   
   const [formData, setFormData] = useState({
     name: '', email: '', password: '', tenantName: ''
@@ -20,26 +21,33 @@ export default function RegisterPage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+    // Sembunyikan error saat pengguna mulai mengetik ulang
+    if (status === 'error') setStatus('idle');
   };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setStatus('idle');
 
     try {
-      // Buat akun autentikasi
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
       });
 
       if (authError) throw authError;
+      
+      // Deteksi jika email sudah pernah terdaftar (Supabase mengembalikan user dengan identities kosong pada kasus ini)
+      if (authData.user && authData.user.identities && authData.user.identities.length === 0) {
+        throw new Error("Email ini sudah terdaftar. Silakan gunakan email lain atau langsung masuk ke akun Anda.");
+      }
+
       if (!authData.user) throw new Error("Gagal membuat akun.");
 
       const userId = authData.user.id;
 
       if (isOwner) {
-        // Registrasi pemilik usaha, toko, dan cabang
         const { data: tenantData, error: tenantErr } = await supabase
           .from('tenants').insert({ name: formData.tenantName }).select().single();
         if (tenantErr) throw tenantErr;
@@ -62,7 +70,6 @@ export default function RegisterPage() {
         if (junctionErr) throw junctionErr;
 
       } else {
-        // Registrasi profil pegawai
         const { error: userErr } = await supabase
           .from('users').insert({
             id: userId, email: formData.email, name: formData.name, role: 'cashier'
@@ -70,18 +77,42 @@ export default function RegisterPage() {
         if (userErr) throw userErr;
       }
 
-      alert("Pendaftaran Berhasil! Silakan Login.");
-      router.push('/login');
+      // Ubah status menjadi success alih-alih melempar alert dan redirect
+      setStatus('success');
 
     } catch (error: unknown) {
-      let msg = "Terjadi kesalahan sistem.";
+      let msg = "Terjadi kesalahan sistem saat mendaftar.";
       if (error instanceof Error) msg = error.message;
       else if (error && typeof error === 'object' && 'message' in error) msg = String(error.message);
-      alert("Pendaftaran Gagal: " + msg);
+      
+      setErrorMessage(msg);
+      setStatus('error');
     } finally {
       setIsLoading(false);
     }
   };
+
+  // Tampilan layar sukses setelah mendaftar (Menunggu konfirmasi email)
+  if (status === 'success') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 p-8 text-center">
+          <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
+            <CheckCircle size={40} />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-3">Pendaftaran Berhasil!</h2>
+          <p className="text-gray-600 mb-8 leading-relaxed">
+            Kami telah mengirimkan tautan konfirmasi ke <br/>
+            <span className="font-bold text-gray-900">{formData.email}</span>. <br/><br/>
+            Silakan periksa kotak masuk atau folder spam Anda untuk mengaktifkan akun sebelum mulai masuk.
+          </p>
+          <Link href="/login" className="inline-block w-full bg-blue-600 text-white font-bold px-6 py-3 rounded-lg hover:bg-blue-700 transition">
+            Kembali ke Halaman Login
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
@@ -95,7 +126,15 @@ export default function RegisterPage() {
         </div>
 
         <form onSubmit={handleRegister} className="p-6 space-y-4">
-          {/* Pemilih peran pendaftaran */}
+          
+          {/* Tampilan Error */}
+          {status === 'error' && (
+            <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg flex items-start gap-2 text-sm animate-in fade-in slide-in-from-top-2">
+              <AlertCircle size={18} className="shrink-0 mt-0.5" />
+              <p>{errorMessage}</p>
+            </div>
+          )}
+
           <div className="flex p-1 bg-gray-100 rounded-lg mb-6">
             <button type="button" onClick={() => setIsOwner(true)} className={`flex-1 py-2 text-sm font-bold rounded-md transition ${isOwner ? 'bg-white text-blue-600 shadow' : 'text-gray-500'}`}>
               Pemilik Usaha
@@ -120,7 +159,6 @@ export default function RegisterPage() {
             </div>
           </div>
           
-          {/* Input password dengan toggle visibilitas */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
             <div className="relative">
@@ -139,14 +177,13 @@ export default function RegisterPage() {
                 type="button" 
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
-                tabIndex={-1} // Sembunyikan tombol dari urutan tab keyboard
+                tabIndex={-1}
               >
                 {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
               </button>
             </div>
           </div>
 
-          {/* Input nama usaha untuk pemilik */}
           {isOwner && (
             <div className="pt-2">
               <label className="block text-sm font-bold text-blue-700 mb-1">Nama Toko / Usaha Anda</label>
