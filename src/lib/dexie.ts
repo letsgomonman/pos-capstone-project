@@ -15,6 +15,8 @@ export interface LocalTransaction {
   tenant_id: string;
   branch_id: string;
   cashier_id: string;
+  customer_name?: string;  // PERBAIKAN: Menyimpan nama pelanggan
+  customer_phone?: string; // PERBAIKAN: Menyimpan nomor HP
   total_amount: number;
   discount_amount: number;
   order_note: string;
@@ -40,9 +42,8 @@ const db = new Dexie('POS_OfflineDatabase') as Dexie & {
   transaction_items: EntityTable<LocalTransactionItem, 'id'>;
 };
 
-// Skema database: versi dan indeks
-db.version(1).stores({
-  // Kolom pertama adalah kunci utama; kolom berikutnya adalah indeks pencarian.
+// Skema database: versi 2 (Pembaruan Skema)
+db.version(2).stores({
   products: 'id, sku, name',
   transactions: 'offline_id, is_synced, created_at',
   transaction_items: 'id, transaction_id, product_id'

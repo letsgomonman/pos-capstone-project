@@ -12,7 +12,7 @@ const withSerwist = withSerwistInit({
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   turbopack: {},
-  // Tambahkan konfigurasi Next.js lain di sini jika diperlukan nanti
+  // Konfigurasi Next.js lain di sini jika diperlukan nanti
 };
 
 // Bungkus nextConfig dengan withSerwist

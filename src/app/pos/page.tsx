@@ -106,7 +106,7 @@ export default function POSPage() {
 
       if (snapErr) throw snapErr;
 
-      alert("Tutup Kasir Berhasil! Data ML harian tersimpan. Anda akan dikeluarkan dari sistem.");
+      alert("Tutup Kasir Berhasil! Data harian tersimpan. Anda akan dikeluarkan dari sistem.");
       handleLogout(); 
 
     } catch (error: unknown) {

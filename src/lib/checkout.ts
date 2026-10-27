@@ -20,7 +20,7 @@ export async function processCheckout(payload: CheckoutPayload) {
   let customerId = null;
 
   try {
-    // CRM pelanggan
+    // 1. CRM pelanggan (Hanya dieksekusi jika ONLINE)
     if (navigator.onLine && (payload.customerPhone || payload.customerName)) {
       let existingCust = null;
 
@@ -60,12 +60,14 @@ export async function processCheckout(payload: CheckoutPayload) {
       }
     }
 
-    // Simpan transaksi lokal (offline-first)
+    // 2. Simpan header transaksi lokal (offline-first) BESERTA Data Pelanggan
     await db.transactions.add({
       offline_id: offlineId,
       tenant_id: payload.tenantId,    
       branch_id: payload.branchId,    
-      cashier_id: payload.cashierId,  
+      cashier_id: payload.cashierId,
+      customer_name: payload.customerName,   // PERBAIKAN
+      customer_phone: payload.customerPhone, // PERBAIKAN
       total_amount: payload.totalAmount,
       discount_amount: payload.discountAmount,
       order_note: payload.orderNote,
@@ -74,7 +76,18 @@ export async function processCheckout(payload: CheckoutPayload) {
       created_at: new Date().toISOString(),
     });
 
-    // Sinkronkan transaksi ke cloud (online)
+    // 3. PERBAIKAN KRUSIAL: Simpan RINCIAN BARANG ke memori lokal
+    const localTxItems = payload.items.map(item => ({
+      id: `ITEM-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      transaction_id: offlineId,
+      product_id: item.id,
+      qty: item.cartQty,
+      unit_price: item.branch_price,
+      subtotal: item.subtotal
+    }));
+    await db.transaction_items.bulkAdd(localTxItems);
+
+    // 4. Sinkronkan transaksi ke cloud (jika sedang ONLINE)
     if (navigator.onLine) {
        const { data: tx, error: txErr } = await supabase
          .from('transactions')
@@ -109,18 +122,10 @@ export async function processCheckout(payload: CheckoutPayload) {
 
        // Buat jurnal otomatis akuntansi (SAK EMKM)
        try {
-         console.log("[AKUNTANSI] 1. Mencari akun untuk Tenant ID:", payload.tenantId);
-         
-         const { data: accounts, error: accFetchErr } = await supabase
+         const { data: accounts } = await supabase
            .from('chart_of_accounts')
            .select('id, account_code, tenant_id')
            .eq('tenant_id', payload.tenantId);
-           
-         if (accFetchErr) {
-             console.error("[AKUNTANSI] Error saat menarik chart_of_accounts:", accFetchErr);
-         }
-         
-         console.log("[AKUNTANSI] 2. Hasil penarikan akun:", accounts);
 
          if (accounts && accounts.length > 0) {
            const accMap = accounts.reduce((acc, curr) => {
@@ -132,8 +137,6 @@ export async function processCheckout(payload: CheckoutPayload) {
            const revenueAccountId = accMap['411']; 
            const inventoryAccountId = accMap['114']; 
            const cogsAccountId = accMap['511']; 
-           
-           console.log("[AKUNTANSI] 3. Pemetaan ID Akun:", { assetAccountId, revenueAccountId, inventoryAccountId, cogsAccountId });
 
            if (assetAccountId && revenueAccountId && inventoryAccountId && cogsAccountId) {
              
@@ -148,8 +151,6 @@ export async function processCheckout(payload: CheckoutPayload) {
                 const basePrice = prod?.base_price || 0;
                 totalCOGS += (basePrice * item.cartQty);
              }
-             
-             console.log("[AKUNTANSI] 4. HPP Terkalkulasi:", totalCOGS);
 
              const { data: journal, error: journalErr } = await supabase
                .from('journals')
@@ -163,11 +164,7 @@ export async function processCheckout(payload: CheckoutPayload) {
                })
                .select().single();
 
-             if (journalErr) {
-                 console.error("[AKUNTANSI] 5. Gagal membuat Header Jurnal:", journalErr);
-             } else if (journal) {
-               console.log("[AKUNTANSI] 6. Header Jurnal dibuat:", journal.id);
-               
+             if (!journalErr && journal) {
                const journalLines = [];
                
                if (payload.totalAmount > 0) {
@@ -184,22 +181,11 @@ export async function processCheckout(payload: CheckoutPayload) {
                    );
                }
                
-               console.log("[AKUNTANSI] 7. Baris Jurnal yang akan di-insert:", journalLines);
-               
                if (journalLines.length > 0) {
-                   const { error: lineErr } = await supabase.from('journal_lines').insert(journalLines);
-                   if (lineErr) {
-                       console.error("[AKUNTANSI] 8. Gagal memasukkan baris jurnal:", lineErr);
-                   } else {
-                       console.log("[AKUNTANSI] 9. Penjurnalan SAK EMKM Berhasil!");
-                   }
+                   await supabase.from('journal_lines').insert(journalLines);
                }
              }
-           } else {
-               console.warn("[AKUNTANSI] WARNING: Ada akun krusial yang tidak ditemukan di chart_of_accounts untuk tenant ini.");
            }
-         } else {
-             console.warn("[AKUNTANSI] WARNING: Tabel chart_of_accounts kosong untuk tenant ini.");
          }
        } catch (accError) {
          console.error("[AKUNTANSI] FATAL ERROR Gagal mencatat jurnal akuntansi:", accError);

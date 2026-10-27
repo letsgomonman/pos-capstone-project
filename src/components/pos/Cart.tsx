@@ -4,7 +4,7 @@ import { useCartStore, CartItem } from '@/hooks/useCartStore';
 import { processCheckout } from '@/lib/checkout';
 import { generateReceiptPDF } from '@/lib/pdf-generator';
 import { sendWhatsAppReceipt } from '@/lib/whatsapp';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSession } from '@/hooks/useSession';
 import { supabase } from '@/lib/supabase';
 import { UserPlus, QrCode, Banknote, Tag, FileText, Trash2 } from 'lucide-react';
@@ -24,7 +24,8 @@ export default function CartPanel() {
   const [discountValue, setDiscountValue] = useState<number | ''>('');
   const [cashReceived, setCashReceived] = useState<number | ''>('');
   
-  // Data pelanggan untuk fitur struk
+  const [storeInfo, setStoreInfo] = useState({ name: 'Toko Capstone', branch: 'Pusat' });
+
   const [lastTx, setLastTx] = useState<{ 
     id: string, 
     amount: number, 
@@ -32,8 +33,62 @@ export default function CartPanel() {
     method: string, 
     items: CartItem[],
     customerName?: string,
-    customerPhone?: string
+    customerPhone?: string,
+    orderNote?: string
   } | null>(null);
+
+  // PERBAIKAN: Logika pengambilan identitas toko yang lebih tahan banting (Robust Fetching)
+  useEffect(() => {
+    async function fetchStoreInfo() {
+      if (!session?.tenantId || !session?.branchId) return;
+      
+      try {
+        // 1. Ambil nama cabang tempat kasir bertugas
+        const { data: branchData, error: branchErr } = await supabase
+          .from('branches')
+          .select('name')
+          .eq('id', session.branchId)
+          .single();
+
+        if (branchErr) console.warn("Peringatan: Gagal memuat nama cabang", branchErr);
+
+        // 2. Ambil nama toko utama (tenant)
+        let tenantName = 'Toko Capstone'; // Default
+        
+        const { data: workspaceData, error: wsErr } = await supabase
+          .from('workspaces')
+          .select('name')
+          .eq('id', session.tenantId)
+          .single();
+
+        if (wsErr) {
+          console.warn("Gagal membaca tabel workspaces (Mungkin RLS memblokir kasir atau tabel tidak ada). Mencoba tabel 'tenants'...", wsErr);
+          
+          // Fallback: Mencoba mencari di tabel 'tenants' jika tabel 'workspaces' gagal
+          const { data: tenantData, error: tenantErr } = await supabase
+            .from('tenants')
+            .select('name')
+            .eq('id', session.tenantId)
+            .single();
+            
+          if (tenantData?.name) tenantName = tenantData.name;
+          else console.error("Gagal menemukan nama toko di tabel workspaces maupun tenants:", tenantErr);
+        } else if (workspaceData?.name) {
+          tenantName = workspaceData.name;
+        }
+
+        // Set nama usaha yang berhasil ditemukan ke dalam state struk
+        setStoreInfo({
+          name: tenantName,
+          branch: branchData?.name || 'Pusat'
+        });
+      } catch (error) {
+        console.error("Kesalahan sistem saat memuat info toko:", error);
+      }
+    }
+
+    fetchStoreInfo();
+  }, [session]);
 
   const subtotal = getTotal();
   
@@ -94,7 +149,6 @@ export default function CartPanel() {
 
       window.dispatchEvent(new Event('refreshProductGrid'));
 
-      // PERBAIKAN: Simpan data pelanggan ke state untuk struk PDF & WA
       setLastTx({ 
         id: result.offlineId, 
         amount: grandTotal, 
@@ -102,7 +156,8 @@ export default function CartPanel() {
         method: paymentMethod,
         items: [...items],
         customerName: buyerName || 'Umum',
-        customerPhone: buyerPhone || ''
+        customerPhone: buyerPhone || '',
+        orderNote: orderNote
       });
       
       clearCart();
@@ -144,21 +199,21 @@ export default function CartPanel() {
         
         <div className="flex flex-col gap-2 w-full">
           <button 
-            // Fitur unduh struk PDF
             onClick={() => generateReceiptPDF({
               transactionId: lastTx.id, 
               items: lastTx.items, 
               totalAmount: lastTx.amount, 
               paymentMethod: lastTx.method.toUpperCase(), 
-              branchName: 'Pusat',
-              customerName: lastTx.customerName
+              storeName: storeInfo.name,
+              branchName: storeInfo.branch,
+              customerName: lastTx.customerName,
+              orderNote: lastTx.orderNote
             })}
             className="bg-gray-800 text-white font-semibold p-3 rounded-lg hover:bg-gray-700 transition"
           >
             Unduh PDF Struk
           </button>
           <button 
-            // Fitur kirim struk WhatsApp
             onClick={() => {
               if (!lastTx.customerPhone) return alert("Nomor HP pelanggan kosong.");
               sendWhatsAppReceipt({
@@ -166,8 +221,10 @@ export default function CartPanel() {
                 transactionId: lastTx.id, 
                 items: lastTx.items, 
                 totalAmount: lastTx.amount, 
-                branchName: 'Pusat',
-                customerName: lastTx.customerName
+                storeName: storeInfo.name,
+                branchName: storeInfo.branch,
+                customerName: lastTx.customerName,
+                orderNote: lastTx.orderNote
               });
             }}
             className="bg-green-600 text-white font-semibold p-3 rounded-lg hover:bg-green-700 transition"

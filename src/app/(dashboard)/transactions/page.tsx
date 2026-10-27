@@ -381,9 +381,10 @@ export default function TransactionsPage() {
             </div>
             
             <div className="p-6 overflow-y-auto flex-1 relative">
+              {/* WATERMARK PERBAIKAN: Menambahkan z-50 dan opacity-40 */}
               {selectedTx.is_void && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20 rotate-[-30deg]">
-                  <span className="text-6xl font-black text-red-600 border-8 border-red-600 p-4 rounded-xl">BATAL</span>
+                <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none opacity-40 rotate-[-30deg]">
+                  <span className="text-6xl font-black text-red-600 border-8 border-red-600 p-4 rounded-xl shadow-sm">BATAL</span>
                 </div>
               )}
 

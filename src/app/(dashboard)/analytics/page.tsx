@@ -23,6 +23,9 @@ export default function AnalyticsDashboard() {
   const { session } = useSession();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<string>('all');
+  
+  // State baru untuk rentang waktu
+  const [timeRange, setTimeRange] = useState<string>('7d');
   const [isLoading, setIsLoading] = useState(true);
 
   // Data: Metrik utama
@@ -32,6 +35,14 @@ export default function AnalyticsDashboard() {
   const [revenueTrend, setRevenueTrend] = useState<ChartData[]>([]);
   const [hourlyTrend, setHourlyTrend] = useState<HourlyData[]>([]);
   const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
+
+  // Teks pembantu untuk judul
+  const timeRangeText = {
+    '7d': '7 Hari Terakhir',
+    '30d': '30 Hari Terakhir',
+    '6m': '6 Bulan Terakhir',
+    '1y': '1 Tahun Terakhir'
+  }[timeRange];
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -50,11 +61,42 @@ export default function AnalyticsDashboard() {
           activeBranchIds = [session.branchId];
         }
 
-        // Rentang waktu analitik: tujuh hari terakhir
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-        sevenDaysAgo.setHours(0, 0, 0, 0);
-        const isoStartDate = sevenDaysAgo.toISOString();
+        // Setup Rentang Waktu dan Inisialisasi Label Grafik
+        const now = new Date();
+        let startDate = new Date();
+        const revMap: Record<string, number> = {};
+        let isMonthView = false; // Flag untuk menentukan pengelompokan per bulan atau hari
+
+        if (timeRange === '7d') {
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+          for (let i = 6; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+            revMap[d.toLocaleDateString('id-ID', { month: 'short', day: 'numeric' })] = 0;
+          }
+        } else if (timeRange === '30d') {
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29);
+          for (let i = 29; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+            revMap[d.toLocaleDateString('id-ID', { month: 'short', day: 'numeric' })] = 0;
+          }
+        } else if (timeRange === '6m') {
+          isMonthView = true;
+          startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1); // Awal bulan, 5 bulan lalu
+          for (let i = 5; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            revMap[d.toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })] = 0;
+          }
+        } else if (timeRange === '1y') {
+          isMonthView = true;
+          startDate = new Date(now.getFullYear(), now.getMonth() - 11, 1); // Awal bulan, 11 bulan lalu
+          for (let i = 11; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            revMap[d.toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })] = 0;
+          }
+        }
+        
+        startDate.setHours(0, 0, 0, 0);
+        const isoStartDate = startDate.toISOString();
 
         // Query transaksi untuk analitik
         let txQuery = supabase
@@ -75,16 +117,8 @@ export default function AnalyticsDashboard() {
 
         // Olah transaksi menjadi data analitik
         let totalRev = 0;
-        const revMap: Record<string, number> = {};
         const hourMap: Record<string, number> = {};
         const prodMap: Record<string, number> = {};
-
-        // Isi label tren pendapatan untuk tujuh hari terakhir
-        for(let i = 6; i >= 0; i--) {
-          const d = new Date();
-          d.setDate(d.getDate() - i);
-          revMap[d.toLocaleDateString('id-ID', { month: 'short', day: 'numeric' })] = 0;
-        }
 
         // Isi label distribusi transaksi per jam
         for(let i = 8; i <= 22; i++) { 
@@ -95,7 +129,11 @@ export default function AnalyticsDashboard() {
           totalRev += Number(tx.total_amount);
           
           const date = new Date(tx.created_at);
-          const dateStr = date.toLocaleDateString('id-ID', { month: 'short', day: 'numeric' });
+          // Tentukan kunci mapping berdasarkan rentang waktu (harian vs bulanan)
+          const dateStr = isMonthView 
+            ? date.toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })
+            : date.toLocaleDateString('id-ID', { month: 'short', day: 'numeric' });
+            
           const hourStr = `${date.getHours().toString().padStart(2, '0')}:00`;
 
           if (revMap[dateStr] !== undefined) revMap[dateStr] += Number(tx.total_amount);
@@ -131,27 +169,50 @@ export default function AnalyticsDashboard() {
     };
 
     fetchDashboardData();
-  }, [session, selectedFilter]);
+  }, [session, selectedFilter, timeRange]); // Jangan lupa tambahkan timeRange sebagai dependency
 
   if (isLoading) return <div className="p-8 text-gray-500 animate-pulse flex items-center justify-center h-full">Memproses Data Analitik...</div>;
 
   return (
     <div className="p-8 pb-20">
-      {/* Tampilan: Header dan filter cabang */}
-      <header className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Tampilan: Header dan filter */}
+      <header className="mb-8 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Ringkasan Data (7 Hari Terakhir)</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Ringkasan Data ({timeRangeText})</h1>
           <p className="text-gray-500 mt-1">Pantau performa tren penjualan dan analisis pergerakan pelanggan.</p>
         </div>
-        {session?.role === 'owner' && branches.length > 0 && (
-          <div className="flex items-center gap-3 bg-white p-2 rounded-lg border border-gray-200 shadow-sm shrink-0">
-            <MapPin size={18} className="text-gray-400 ml-2" />
-            <select value={selectedFilter} onChange={(e) => setSelectedFilter(e.target.value)} className="bg-transparent text-gray-800 font-medium outline-none cursor-pointer pr-4 py-1">
-              <option value="all">Keseluruhan Usaha</option>
-              {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+        
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Dropdown Rentang Waktu */}
+          <div className="flex items-center bg-white p-2 rounded-lg border border-gray-200 shadow-sm shrink-0">
+            <Clock size={18} className="text-gray-400 ml-2 mr-1" />
+            <select 
+              value={timeRange} 
+              onChange={(e) => setTimeRange(e.target.value)} 
+              className="bg-transparent text-gray-800 font-medium outline-none cursor-pointer pr-2 py-1"
+            >
+              <option value="7d">7 Hari Terakhir</option>
+              <option value="30d">30 Hari Terakhir</option>
+              <option value="6m">6 Bulan Terakhir</option>
+              <option value="1y">1 Tahun Terakhir</option>
             </select>
           </div>
-        )}
+
+          {/* Filter Cabang (Hanya untuk Owner) */}
+          {session?.role === 'owner' && branches.length > 0 && (
+            <div className="flex items-center bg-white p-2 rounded-lg border border-gray-200 shadow-sm shrink-0">
+              <MapPin size={18} className="text-gray-400 ml-2 mr-1" />
+              <select 
+                value={selectedFilter} 
+                onChange={(e) => setSelectedFilter(e.target.value)} 
+                className="bg-transparent text-gray-800 font-medium outline-none cursor-pointer pr-2 py-1"
+              >
+                <option value="all">Keseluruhan Usaha</option>
+                {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
       </header>
 
       {/* Tampilan: Kartu metrik utama */}
@@ -159,7 +220,7 @@ export default function AnalyticsDashboard() {
         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-start gap-4">
           <div className="p-3 bg-green-100 text-green-600 rounded-lg"><TrendingUp size={24} /></div>
           <div>
-            <p className="text-sm font-medium text-gray-500 mb-1">Omzet 7 Hari Terakhir</p>
+            <p className="text-sm font-medium text-gray-500 mb-1">Total Omzet</p>
             <h3 className="text-2xl font-bold text-gray-900">Rp {stats.totalRevenue.toLocaleString('id-ID')}</h3>
           </div>
         </div>
@@ -181,11 +242,13 @@ export default function AnalyticsDashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Tampilan: Grafik tren pendapatan harian */}
+        {/* Tampilan: Grafik tren pendapatan */}
         <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
           <div className="flex items-center gap-2 mb-6">
             <BarChart3 size={20} className="text-blue-600"/>
-            <h2 className="text-lg font-bold text-gray-900">Tren Pendapatan Harian</h2>
+            <h2 className="text-lg font-bold text-gray-900">
+              Tren Pendapatan {timeRange === '6m' || timeRange === '1y' ? 'Bulanan' : 'Harian'}
+            </h2>
           </div>
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -215,7 +278,7 @@ export default function AnalyticsDashboard() {
               <h2 className="text-lg font-bold text-gray-900">Top 5 Produk Terlaris</h2>
             </div>
             {topProducts.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center mt-10">Belum ada data penjualan minggu ini.</p>
+              <p className="text-gray-500 text-sm text-center mt-10">Belum ada data penjualan pada rentang ini.</p>
             ) : (
               <div className="space-y-4 mt-6">
                 {topProducts.map((p, i) => (
