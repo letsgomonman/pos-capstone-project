@@ -91,8 +91,18 @@ export default function RegisterPage() {
   if (status === 'success') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 p-8 text-center">
-          <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 p-8 text-center relative">
+          
+          {/* Tombol Kembali (Status Sukses) */}
+          <Link 
+            href="/" 
+            className="absolute top-4 left-4 p-2 text-gray-400 hover:text-gray-600 transition"
+            title="Kembali ke Beranda"
+          >
+            <ArrowLeft size={20} />
+          </Link>
+
+          <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6 mt-4">
             <CheckCircle size={40} />
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-3">Pendaftaran Berhasil!</h2>
@@ -110,19 +120,19 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
-      {/* Tombol Kembali ke Beranda */}
-      <div className="w-full max-w-md mb-4 flex justify-start">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 relative">
+        
+        {/* Tombol Kembali ke Beranda */}
         <Link 
           href="/" 
-          className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-blue-600 transition"
+          className="absolute top-4 left-4 z-10 p-2 bg-white/20 hover:bg-white/30 backdrop-blur-md rounded-full text-white transition group"
+          title="Kembali ke Beranda"
         >
-          <ArrowLeft size={18} /> Kembali ke Beranda
+          <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
         </Link>
-      </div>
 
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
-        <div className="bg-blue-600 p-6 text-center text-white">
+        <div className="bg-blue-600 p-6 pt-10 text-center text-white relative">
           <div className="bg-white/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
             {isOwner ? <Store size={32} /> : <UserSquare2 size={32} />}
           </div>
@@ -131,6 +141,7 @@ export default function RegisterPage() {
         </div>
 
         <form onSubmit={handleRegister} className="p-6 space-y-4">
+          
           {status === 'error' && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg flex items-start gap-2 text-sm animate-in fade-in slide-in-from-top-2">
               <AlertCircle size={18} className="shrink-0 mt-0.5" />
