@@ -1,24 +1,25 @@
 import { db } from './dexie';
 import { supabase } from './supabase';
 
+// Sinkronisasi transaksi offline
 export async function syncOfflineTransactions() {
   // Validasi koneksi internet
   if (!navigator.onLine) return;
 
   try {
-    // Ambil transaksi yang belum disinkronkan dari database lokal
+    // Ambil transaksi tertunda dari database lokal
     const pendingTxs = await db.transactions.where('is_synced').equals(0).toArray();
     
     if (pendingTxs.length === 0) return;
     
     console.log(`Memulai sinkronisasi ${pendingTxs.length} transaksi offline beserta jurnal keuangan...`);
 
-    // Proses setiap transaksi secara terpisah
+    // Sinkronkan setiap transaksi secara terpisah
     for (const tx of pendingTxs) {
       try {
         let customerId = null;
 
-        // 0. PERBAIKAN: Proses CRM (Data Pelanggan) yang tertunda saat offline
+        // Sinkronkan data pelanggan (CRM)
         if (tx.customer_phone || tx.customer_name) {
           let existingCust = null;
 
@@ -57,19 +58,19 @@ export async function syncOfflineTransactions() {
           }
         }
 
-        // Ambil item transaksi dari database lokal (Sekarang data ini sudah pasti ADA karena perbaikan checkout)
+        // Ambil item transaksi dari database lokal
         const localItems = await db.transaction_items
           .where('transaction_id')
           .equals(tx.offline_id)
           .toArray();
 
-        // 1. Kirim data transaksi utama (beserta customer_id) ke Supabase 
+        // Kirim transaksi utama ke Supabase
         const { data: cloudTx, error: txError } = await supabase.from('transactions').insert({
           offline_id: tx.offline_id,
           tenant_id: tx.tenant_id,
           branch_id: tx.branch_id,
           cashier_id: tx.cashier_id,
-          customer_id: customerId, // Relasi ke pelanggan yang baru dibuat/diperbarui di atas
+          customer_id: customerId, // Relasi ke pelanggan hasil sinkronisasi
           total_amount: tx.total_amount,
           discount_amount: tx.discount_amount || 0,
           order_note: tx.order_note || null,
@@ -80,7 +81,7 @@ export async function syncOfflineTransactions() {
 
         if (txError) throw txError;
 
-        // 2. Format dan kirim item transaksi menggunakan UUID dari Cloud
+        // Kirim item transaksi menggunakan UUID dari Supabase
         if (localItems.length > 0) {
             const cloudItems = localItems.map(item => ({
               transaction_id: cloudTx.id,
@@ -94,7 +95,7 @@ export async function syncOfflineTransactions() {
             if (itemError) throw itemError;
         }
 
-        // 3. Buat Jurnal Otomatis Akuntansi (SAK EMKM) untuk transaksi Offline
+        // Buat jurnal akuntansi otomatis (SAK EMKM)
         try {
           const { data: accounts } = await supabase
             .from('chart_of_accounts')
@@ -126,7 +127,7 @@ export async function syncOfflineTransactions() {
                 totalCOGS += (basePrice * item.qty);
               }
 
-              // Header jurnal (Tanggal disesuaikan dengan waktu transaksi offline)
+              // Menggunakan waktu transaksi offline untuk menjaga kronologi jurnal.
               const { data: journal, error: journalErr } = await supabase
                 .from('journals')
                 .insert({
@@ -136,7 +137,7 @@ export async function syncOfflineTransactions() {
                   reference_id: cloudTx.id,
                   description: `Penjualan POS (Sinkronisasi Offline) - ID: ${tx.offline_id.split('-')[0]}`,
                   created_by: tx.cashier_id,
-                  created_at: tx.created_at // Kunci menjaga kronologi keuangan
+                  created_at: tx.created_at
                 })
                 .select().single();
 
@@ -167,13 +168,13 @@ export async function syncOfflineTransactions() {
           console.error(`Gagal mencatat jurnal akuntansi untuk TX Offline ${tx.offline_id}:`, accErr);
         }
 
-        // 4. Tandai transaksi lokal sebagai tersinkronisasi
+        // Tandai transaksi lokal sebagai tersinkronisasi
         await db.transactions.update(tx.offline_id, { is_synced: 1 });
         console.log(`✅ Transaksi ${tx.offline_id} beserta Pelanggan & Barang berhasil disinkronisasi.`);
 
       } catch (err) {
         console.error(`❌ Gagal sinkronisasi transaksi ${tx.offline_id}:`, err);
-        // Lanjutkan ke transaksi berikutnya jika transaksi ini gagal
+        // Melanjutkan sinkronisasi ke transaksi berikutnya jika transaksi ini gagal.
       }
     }
   } catch (error) {

@@ -26,7 +26,7 @@ interface Transaction {
   is_synced: boolean;
   is_void: boolean;
   cashier: { name: string };
-  // Data pelanggan terkait transaksi
+  // Data pelanggan transaksi
   customers: { name: string; phone: string } | null;
   transaction_items: TransactionItem[];
 }
@@ -92,7 +92,7 @@ export default function TransactionsPage() {
 
     setIsVoiding(true);
     try {
-      // Status transaksi
+      // Status pembatalan transaksi
       const { error } = await supabase
         .from('transactions')
         .update({ 
@@ -104,9 +104,9 @@ export default function TransactionsPage() {
       if (error) throw error;
 
       // Pemulihan stok dan perhitungan HPP
-      let totalCOGS = 0; // Akumulasi HPP untuk jurnal pembalik.
+      let totalCOGS = 0; // Total HPP untuk jurnal pembalik.
       for (const item of selectedTx.transaction_items) {
-        // Hitung HPP berdasarkan harga pokok produk.
+        // Perhitungan HPP produk
         const { data: prod } = await supabase.from('products').select('base_price').eq('id', item.product_id).single();
         const basePrice = prod?.base_price || 0;
         totalCOGS += (basePrice * item.qty);
@@ -126,7 +126,7 @@ export default function TransactionsPage() {
         }
       }
 
-      // Jurnal pembalik (SAK EMKM)
+      // Jurnal pembalik SAK EMKM
       try {
          // Pemetaan akun buku besar
          const { data: accounts } = await supabase
@@ -140,7 +140,7 @@ export default function TransactionsPage() {
              return acc;
            }, {} as Record<string, string>);
 
-           // Akun kas, pendapatan, persediaan, dan HPP
+           // Akun untuk jurnal pembalik
            const assetAccountId = selectedTx.payment_method === 'cash' ? accMap['111'] : accMap['112']; 
            const revenueAccountId = accMap['411']; 
            const inventoryAccountId = accMap['114']; 
@@ -162,7 +162,7 @@ export default function TransactionsPage() {
                .select().single();
 
              if (!journalErr && journal) {
-               // Baris debit dan kredit jurnal pembalik
+               // Baris jurnal pembalik
                const journalLines = [];
                
                // Pembalikan kas dan pendapatan
@@ -193,7 +193,7 @@ export default function TransactionsPage() {
       setTransactions(prev => prev.map(tx => tx.id === txId ? { ...tx, is_void: true } : tx));
       setSelectedTx(prev => prev ? { ...prev, is_void: true } : null);
       
-      // Refresh tampilan kasir dan inventaris di tab lain
+      // Penyegaran tampilan kasir dan inventaris
       window.dispatchEvent(new Event('refreshProductGrid'));
       alert("Transaksi berhasil dibatalkan. Stok dan Jurnal Akuntansi telah dikembalikan.");
       
@@ -216,7 +216,7 @@ export default function TransactionsPage() {
   const qrisPercentage = totalValidCount > 0 ? Math.round((qrisCount / totalValidCount) * 100) : 0;
   const cashPercentage = totalValidCount > 0 ? Math.round((cashCount / totalValidCount) * 100) : 0;
 
-  // Pencarian transaksi berdasarkan ID struk, kasir, atau pelanggan
+  // Filter pencarian transaksi
   const filteredTx = transactions.filter(tx => 
     tx.offline_id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     tx.cashier?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -329,7 +329,7 @@ export default function TransactionsPage() {
                       </div>
                     </td>
                     
-                    {/* Kolom pelanggan */}
+                    {/* Kolom pelanggan transaksi */}
                     <td className="p-4">
                       <div className="flex items-center gap-2">
                         <User size={14} className="text-gray-400" />
@@ -381,7 +381,7 @@ export default function TransactionsPage() {
             </div>
             
             <div className="p-6 overflow-y-auto flex-1 relative">
-              {/* WATERMARK PERBAIKAN: Menambahkan z-50 dan opacity-40 */}
+              {/* Watermark transaksi dibatalkan */}
               {selectedTx.is_void && (
                 <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none opacity-40 rotate-[-30deg]">
                   <span className="text-6xl font-black text-red-600 border-8 border-red-600 p-4 rounded-xl shadow-sm">BATAL</span>
@@ -393,7 +393,7 @@ export default function TransactionsPage() {
                 <p className="text-sm text-gray-500">{new Date(selectedTx.created_at).toLocaleString('id-ID')}</p>
                 <p className="text-xs font-mono text-gray-400 mt-2">ID: {selectedTx.offline_id}</p>
                 
-                {/* Informasi kasir dan pelanggan */}
+                {/* Informasi kasir dan pelanggan struk */}
                 <div className="mt-3 p-2 bg-gray-50 rounded text-sm text-gray-600 flex flex-col gap-1">
                   <p className="flex justify-between"><span>Kasir:</span> <span className="font-semibold">{selectedTx.cashier?.name}</span></p>
                   <p className="flex justify-between">

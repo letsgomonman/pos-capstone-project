@@ -20,7 +20,7 @@ export async function processCheckout(payload: CheckoutPayload) {
   let customerId = null;
 
   try {
-    // 1. CRM pelanggan (Hanya dieksekusi jika ONLINE)
+    // CRM pelanggan online
     if (navigator.onLine && (payload.customerPhone || payload.customerName)) {
       let existingCust = null;
 
@@ -60,14 +60,14 @@ export async function processCheckout(payload: CheckoutPayload) {
       }
     }
 
-    // 2. Simpan header transaksi lokal (offline-first) BESERTA Data Pelanggan
+    // Simpan header transaksi lokal (offline-first)
     await db.transactions.add({
       offline_id: offlineId,
       tenant_id: payload.tenantId,    
       branch_id: payload.branchId,    
       cashier_id: payload.cashierId,
-      customer_name: payload.customerName,   // PERBAIKAN
-      customer_phone: payload.customerPhone, // PERBAIKAN
+      customer_name: payload.customerName,
+      customer_phone: payload.customerPhone,
       total_amount: payload.totalAmount,
       discount_amount: payload.discountAmount,
       order_note: payload.orderNote,
@@ -76,7 +76,7 @@ export async function processCheckout(payload: CheckoutPayload) {
       created_at: new Date().toISOString(),
     });
 
-    // 3. PERBAIKAN KRUSIAL: Simpan RINCIAN BARANG ke memori lokal
+    // Simpan rincian barang transaksi lokal
     const localTxItems = payload.items.map(item => ({
       id: `ITEM-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       transaction_id: offlineId,
@@ -87,7 +87,7 @@ export async function processCheckout(payload: CheckoutPayload) {
     }));
     await db.transaction_items.bulkAdd(localTxItems);
 
-    // 4. Sinkronkan transaksi ke cloud (jika sedang ONLINE)
+    // Sinkronkan transaksi ke cloud saat online
     if (navigator.onLine) {
        const { data: tx, error: txErr } = await supabase
          .from('transactions')
@@ -117,10 +117,10 @@ export async function processCheckout(payload: CheckoutPayload) {
 
        await supabase.from('transaction_items').insert(txItems);
        
-       // Tandai transaksi lokal sudah tersinkronisasi
+       // Tandai transaksi lokal sebagai tersinkronisasi
        await db.transactions.where('offline_id').equals(offlineId).modify({ is_synced: 1 });
 
-       // Buat jurnal otomatis akuntansi (SAK EMKM)
+       // Buat jurnal akuntansi otomatis (SAK EMKM)
        try {
          const { data: accounts } = await supabase
            .from('chart_of_accounts')

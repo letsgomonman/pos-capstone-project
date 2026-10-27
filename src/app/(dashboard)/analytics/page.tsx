@@ -13,7 +13,7 @@ interface ChartData { name: string; total: number; }
 interface HourlyData { hour: string; count: number; }
 interface TopProduct { name: string; sold: number; }
 
-// Data: Item transaksi untuk analitik
+// Tipe data item transaksi
 interface TransactionItemData {
   qty: number;
   products?: { name: string } | { name: string }[] | null;
@@ -24,19 +24,19 @@ export default function AnalyticsDashboard() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<string>('all');
   
-  // State baru untuk rentang waktu
+  // Filter rentang waktu
   const [timeRange, setTimeRange] = useState<string>('7d');
   const [isLoading, setIsLoading] = useState(true);
 
-  // Data: Metrik utama
+  // Metrik utama
   const [stats, setStats] = useState({ totalRevenue: 0, totalTransactions: 0, lowStockItems: 0 });
   
-  // Data: Tren grafik
+  // Data grafik dan produk terlaris
   const [revenueTrend, setRevenueTrend] = useState<ChartData[]>([]);
   const [hourlyTrend, setHourlyTrend] = useState<HourlyData[]>([]);
   const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
 
-  // Teks pembantu untuk judul
+  // Label rentang waktu untuk judul
   const timeRangeText = {
     '7d': '7 Hari Terakhir',
     '30d': '30 Hari Terakhir',
@@ -52,7 +52,7 @@ export default function AnalyticsDashboard() {
       try {
         let activeBranchIds: string[] = [];
 
-        // Filter cabang berdasarkan peran pengguna
+        // Tentukan cabang berdasarkan peran pengguna
         if (session.role === 'owner') {
           const { data: branchData } = await supabase.from('branches').select('id, name').eq('tenant_id', session.tenantId);
           setBranches(branchData || []);
@@ -61,11 +61,11 @@ export default function AnalyticsDashboard() {
           activeBranchIds = [session.branchId];
         }
 
-        // Setup Rentang Waktu dan Inisialisasi Label Grafik
+        // Tentukan rentang waktu dan inisialisasi label grafik
         const now = new Date();
         let startDate = new Date();
         const revMap: Record<string, number> = {};
-        let isMonthView = false; // Flag untuk menentukan pengelompokan per bulan atau hari
+        let isMonthView = false; // Tentukan pengelompokan grafik bulanan atau harian
 
         if (timeRange === '7d') {
           startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
@@ -81,14 +81,14 @@ export default function AnalyticsDashboard() {
           }
         } else if (timeRange === '6m') {
           isMonthView = true;
-          startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1); // Awal bulan, 5 bulan lalu
+          startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1); // Mulai dari awal bulan 5 bulan sebelumnya
           for (let i = 5; i >= 0; i--) {
             const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
             revMap[d.toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })] = 0;
           }
         } else if (timeRange === '1y') {
           isMonthView = true;
-          startDate = new Date(now.getFullYear(), now.getMonth() - 11, 1); // Awal bulan, 11 bulan lalu
+          startDate = new Date(now.getFullYear(), now.getMonth() - 11, 1); // Mulai dari awal bulan 11 bulan sebelumnya
           for (let i = 11; i >= 0; i--) {
             const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
             revMap[d.toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })] = 0;
@@ -98,7 +98,7 @@ export default function AnalyticsDashboard() {
         startDate.setHours(0, 0, 0, 0);
         const isoStartDate = startDate.toISOString();
 
-        // Query transaksi untuk analitik
+        // Ambil transaksi dalam rentang waktu terpilih
         let txQuery = supabase
           .from('transactions')
           .select(`
@@ -115,12 +115,12 @@ export default function AnalyticsDashboard() {
         const { data: txData, error: txError } = await txQuery;
         if (txError) throw txError;
 
-        // Olah transaksi menjadi data analitik
+        // Olah transaksi menjadi metrik dan tren
         let totalRev = 0;
         const hourMap: Record<string, number> = {};
         const prodMap: Record<string, number> = {};
 
-        // Isi label distribusi transaksi per jam
+        // Inisialisasi label distribusi transaksi per jam
         for(let i = 8; i <= 22; i++) { 
           hourMap[`${i.toString().padStart(2, '0')}:00`] = 0;
         }
@@ -129,7 +129,7 @@ export default function AnalyticsDashboard() {
           totalRev += Number(tx.total_amount);
           
           const date = new Date(tx.created_at);
-          // Tentukan kunci mapping berdasarkan rentang waktu (harian vs bulanan)
+          // Tentukan kunci tren sesuai rentang waktu harian atau bulanan
           const dateStr = isMonthView 
             ? date.toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })
             : date.toLocaleDateString('id-ID', { month: 'short', day: 'numeric' });
@@ -139,17 +139,17 @@ export default function AnalyticsDashboard() {
           if (revMap[dateStr] !== undefined) revMap[dateStr] += Number(tx.total_amount);
           if (hourMap[hourStr] !== undefined) hourMap[hourStr] += 1;
 
-          // Baca item transaksi untuk menghitung produk terlaris
+          // Hitung produk terlaris dari item transaksi
           const items = (tx.transaction_items as unknown as TransactionItemData[]) || [];
           items.forEach((item) => {
-            // Tangani relasi produk yang dikembalikan sebagai objek atau array
+            // Tangani relasi produk dalam bentuk objek atau array
             const prod = Array.isArray(item.products) ? item.products[0] : item.products;
             const pName = prod?.name || 'Produk Dihapus';
             prodMap[pName] = (prodMap[pName] || 0) + item.qty;
           });
         });
 
-        // Hitung jumlah stok menipis pada cabang aktif
+        // Hitung stok menipis pada cabang aktif
         let lowStockCount = 0;
         if (activeBranchIds.length > 0) {
           const { count } = await supabase.from('branch_inventory').select('*', { count: 'exact', head: true }).in('branch_id', activeBranchIds).lt('stock_qty', 10);
@@ -169,13 +169,13 @@ export default function AnalyticsDashboard() {
     };
 
     fetchDashboardData();
-  }, [session, selectedFilter, timeRange]); // Jangan lupa tambahkan timeRange sebagai dependency
+  }, [session, selectedFilter, timeRange]); // Muat ulang saat sesi, cabang, atau rentang waktu berubah
 
   if (isLoading) return <div className="p-8 text-gray-500 animate-pulse flex items-center justify-center h-full">Memproses Data Analitik...</div>;
 
   return (
     <div className="p-8 pb-20">
-      {/* Tampilan: Header dan filter */}
+      {/* Header dan filter */}
       <header className="mb-8 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Ringkasan Data ({timeRangeText})</h1>
@@ -183,7 +183,7 @@ export default function AnalyticsDashboard() {
         </div>
         
         <div className="flex flex-wrap items-center gap-3">
-          {/* Dropdown Rentang Waktu */}
+          {/* Filter rentang waktu */}
           <div className="flex items-center bg-white p-2 rounded-lg border border-gray-200 shadow-sm shrink-0">
             <Clock size={18} className="text-gray-400 ml-2 mr-1" />
             <select 
@@ -198,7 +198,7 @@ export default function AnalyticsDashboard() {
             </select>
           </div>
 
-          {/* Filter Cabang (Hanya untuk Owner) */}
+          {/* Filter cabang untuk owner */}
           {session?.role === 'owner' && branches.length > 0 && (
             <div className="flex items-center bg-white p-2 rounded-lg border border-gray-200 shadow-sm shrink-0">
               <MapPin size={18} className="text-gray-400 ml-2 mr-1" />
@@ -215,7 +215,7 @@ export default function AnalyticsDashboard() {
         </div>
       </header>
 
-      {/* Tampilan: Kartu metrik utama */}
+      {/* Kartu metrik utama */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-start gap-4">
           <div className="p-3 bg-green-100 text-green-600 rounded-lg"><TrendingUp size={24} /></div>
@@ -242,7 +242,7 @@ export default function AnalyticsDashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Tampilan: Grafik tren pendapatan */}
+        {/* Grafik tren pendapatan */}
         <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
           <div className="flex items-center gap-2 mb-6">
             <BarChart3 size={20} className="text-blue-600"/>
@@ -271,7 +271,7 @@ export default function AnalyticsDashboard() {
 
         <div className="flex flex-col gap-6">
           
-          {/* Tampilan: Daftar lima produk terlaris */}
+          {/* Daftar lima produk terlaris */}
           <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex-1">
             <div className="flex items-center gap-2 mb-4">
               <Package size={20} className="text-purple-600"/>
@@ -294,7 +294,7 @@ export default function AnalyticsDashboard() {
             )}
           </div>
 
-          {/* Tampilan: Grafik distribusi jam sibuk */}
+          {/* Grafik distribusi jam sibuk */}
           <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex-1">
             <div className="flex items-center gap-2 mb-4">
               <Clock size={20} className="text-orange-600"/>

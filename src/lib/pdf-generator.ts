@@ -4,7 +4,7 @@ import { CartItem } from '@/hooks/useCartStore';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale'; 
 
-// Tipe ekstensi jsPDF untuk membaca posisi akhir tabel.
+// Ekstensi jsPDF untuk posisi akhir tabel.
 interface jsPDFWithPlugin extends jsPDF {
   lastAutoTable?: {
     finalY: number;
@@ -16,10 +16,10 @@ interface ReceiptParams {
   items: CartItem[];
   totalAmount: number;
   paymentMethod: string;
-  storeName?: string; // Menambahkan nama toko dinamis
+  storeName?: string;
   branchName: string;
   customerName?: string;
-  orderNote?: string; // Menambahkan parameter catatan pesanan
+  orderNote?: string;
 }
 
 // Membuat PDF struk transaksi.
@@ -28,14 +28,14 @@ export function generateReceiptPDF({
   storeName = "Toko Capstone", branchName, customerName, orderNote 
 }: ReceiptParams) {
   
-  // Inisialisasi dokumen struk thermal 80mm.
+  // Inisialisasi dokumen struk.
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
     format: [80, 250] 
   });
 
-  // Header toko dan informasi transaksi.
+  // Header toko dan transaksi.
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
   doc.text(storeName.toUpperCase(), 40, 10, { align: 'center' });
@@ -45,7 +45,7 @@ export function generateReceiptPDF({
   doc.text(`Cabang: ${branchName}`, 40, 15, { align: 'center' });
   doc.text(format(new Date(), 'dd MMM yyyy HH:mm', { locale: id }), 40, 20, { align: 'center' });
   
-  // Perbaikan ID: Menampilkan ID utuh (offline_id), tidak lagi dipotong split('-')[0]
+  // Identitas transaksi.
   doc.setFontSize(9);
   doc.text(`ID: ${transactionId}`, 40, 25, { align: 'center' }); 
   
@@ -77,14 +77,14 @@ export function generateReceiptPDF({
     ]),
   });
 
-  // Ambil posisi Y setelah tabel barang selesai dirender.
+  // Posisi akhir tabel item.
   const finalY = (doc as jsPDFWithPlugin).lastAutoTable?.finalY || (currentY + 1);
   let summaryY = finalY;
 
-  // Render Garis Pemisah
+  // Garis pemisah ringkasan.
   doc.line(5, summaryY + 2, 75, summaryY + 2);
 
-  // Render Total Harga & Metode Pembayaran
+  // Total dan metode pembayaran.
   doc.setFont('helvetica', 'bold');
   doc.text("TOTAL", 5, summaryY + 7);
   doc.text(`Rp ${totalAmount.toLocaleString('id-ID')}`, 75, summaryY + 7, { align: 'right' });
@@ -93,25 +93,25 @@ export function generateReceiptPDF({
   doc.text(`Pembayaran: ${paymentMethod.toUpperCase()}`, 5, summaryY + 12);
   summaryY += 15;
 
-  // Catatan Pesanan (Ditambahkan jika ada)
+  // Catatan pesanan opsional.
   if (orderNote && orderNote.trim() !== '') {
     doc.line(5, summaryY + 2, 75, summaryY + 2);
     summaryY += 6;
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(8);
-    // Auto-wrap teks catatan agar tidak keluar kertas
+    // Membungkus catatan agar tetap di dalam kertas.
     const splitNote = doc.splitTextToSize(`Catatan: ${orderNote}`, 70); 
     doc.text(splitNote, 5, summaryY);
     summaryY += (splitNote.length * 4);
   }
 
-  // Pesan Penutup & Simpan Struk
+  // Pesan penutup.
   doc.line(5, summaryY + 3, 75, summaryY + 3);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.text("Terima kasih telah berbelanja!", 40, summaryY + 8, { align: 'center' });
   doc.text("Barang yang dibeli tidak dapat dikembalikan", 40, summaryY + 12, { align: 'center' });
 
-  // Nama file PDF menggunakan ID utuh
+  // Penyimpanan file PDF.
   doc.save(`Struk_${transactionId}.pdf`);
 }

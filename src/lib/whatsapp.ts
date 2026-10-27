@@ -6,10 +6,10 @@ interface WAReceiptParams {
   transactionId: string;
   items: CartItem[];
   totalAmount: number;
-  storeName?: string; // Menambahkan nama toko dinamis
+  storeName?: string;
   branchName: string;
   customerName?: string;
-  orderNote?: string; // Menambahkan parameter catatan pesanan
+  orderNote?: string;
 }
 
 export function sendWhatsAppReceipt({ 
@@ -23,13 +23,13 @@ export function sendWhatsAppReceipt({
     phone = '62' + phone.substring(1);
   }
 
-  // Sapaan personal pelanggan menggunakan karakter ASCII standar (mengganti emoji yang rusak)
+  // Sapaan personal pelanggan.
   let text = '';
   if (customerName && customerName !== 'Umum' && customerName !== 'Pelanggan Member') {
     text += `Halo, *${customerName}*!\n\n`;
   }
 
-  // Menyusun isi struk (Perbaikan Sinkronisasi Nama Toko & ID utuh)
+  // Penyusunan isi struk.
   text += `*TERIMA KASIH TELAH BERBELANJA!*\n`;
   text += `${storeName} - Cabang ${branchName}\n`;
   text += `No. Struk: ${transactionId}\n`;
@@ -43,17 +43,17 @@ export function sendWhatsAppReceipt({
   text += `--------------------------------\n`;
   text += `*TOTAL: Rp ${totalAmount.toLocaleString('id-ID')}*\n`;
 
-  // Sisipkan Catatan jika kasir menginputkannya
+  // Penambahan catatan pesanan.
   if (orderNote && orderNote.trim() !== '') {
     text += `Catatan: _${orderNote}_\n`;
   }
 
   text += `\nSemoga harimu menyenangkan!`;
 
-  // Enkode string dengan encodeURIComponent agar emoji/simbol aman saat dilempar ke URL API
+  // Pengodean pesan untuk URL.
   const encodedText = encodeURIComponent(text);
 
-  // Pembuatan URL dan pembukaan WhatsApp di tab baru.
+  // Pembuatan URL dan pembukaan WhatsApp.
   const waUrl = `https://wa.me/${phone}?text=${encodedText}`;
   window.open(waUrl, '_blank');
 }

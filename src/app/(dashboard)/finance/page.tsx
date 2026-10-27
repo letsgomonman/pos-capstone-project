@@ -32,7 +32,7 @@ export default function FinanceDashboardPage() {
   const [balances, setBalances] = useState<AccountBalance[]>([]);
   const [netIncome, setNetIncome] = useState(0);
 
-  // Blok: State modal pengeluaran
+  // Formulir pencatatan pengeluaran.
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [expenseForm, setExpenseForm] = useState({
@@ -100,7 +100,7 @@ export default function FinanceDashboardPage() {
     fetchFinancialData();
   }, [session, refreshTrigger]);
 
-  // Fitur: Mencatat pengeluaran melalui jurnal ganda
+  // Pencatatan pengeluaran melalui jurnal berpasangan.
   const handleSubmitExpense = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!session || !expenseForm.amount) return;
@@ -109,7 +109,7 @@ export default function FinanceDashboardPage() {
     try {
       const amount = Number(expenseForm.amount);
 
-      // 1. Ambil ID akun dari kode akun yang dipilih.
+      // Ambil ID akun berdasarkan kode akun yang dipilih.
       const { data: accounts } = await supabase
         .from('chart_of_accounts')
         .select('id, account_code')
@@ -123,7 +123,7 @@ export default function FinanceDashboardPage() {
 
       if (!debitAccountId || !creditAccountId) throw new Error("Gagal memetakan akun debit/kredit.");
 
-      // 2. Buat header jurnal.
+      // Buat header jurnal.
       const { data: journal, error: journalErr } = await supabase
         .from('journals')
         .insert({
@@ -137,7 +137,7 @@ export default function FinanceDashboardPage() {
 
       if (journalErr) throw journalErr;
 
-      // 3. Buat baris jurnal: debit beban dan kredit kas/bank.
+      // Buat baris jurnal untuk debit beban dan kredit kas/bank.
       const { error: lineErr } = await supabase
         .from('journal_lines')
         .insert([
@@ -149,7 +149,7 @@ export default function FinanceDashboardPage() {
 
       setExpenseForm({ amount: '', category: '512', source: '111', description: '' });
       setIsExpenseModalOpen(false);
-      setRefreshTrigger(prev => prev + 1); // Muat ulang data dasbor.
+      setRefreshTrigger(prev => prev + 1); // Memuat ulang data dasbor.
       alert("Pengeluaran berhasil dicatat dan dijurnal.");
 
     } catch (error) {
@@ -231,7 +231,7 @@ export default function FinanceDashboardPage() {
           </div>
         </div>
       )}
-      {/* Blok: Navigasi laporan dan ekspor PDF */}
+      {/* Navigasi laporan dan cetak PDF. */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-gray-200 mb-6 gap-4 print:hidden">
         <div className="flex gap-4">
           <button 
@@ -375,7 +375,7 @@ export default function FinanceDashboardPage() {
         </div>
       )}
 
-      {/* Blok: Modal pencatatan pengeluaran */}
+      {/* Modal pencatatan pengeluaran. */}
       {isExpenseModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">

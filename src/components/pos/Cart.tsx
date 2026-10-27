@@ -37,13 +37,13 @@ export default function CartPanel() {
     orderNote?: string
   } | null>(null);
 
-  // PERBAIKAN: Logika pengambilan identitas toko yang lebih tahan banting (Robust Fetching)
+  // ambil identitas toko untuk struk.
   useEffect(() => {
     async function fetchStoreInfo() {
       if (!session?.tenantId || !session?.branchId) return;
       
       try {
-        // 1. Ambil nama cabang tempat kasir bertugas
+        // ambil nama cabang tempat kasir bertugas.
         const { data: branchData, error: branchErr } = await supabase
           .from('branches')
           .select('name')
@@ -52,8 +52,8 @@ export default function CartPanel() {
 
         if (branchErr) console.warn("Peringatan: Gagal memuat nama cabang", branchErr);
 
-        // 2. Ambil nama toko utama (tenant)
-        let tenantName = 'Toko Capstone'; // Default
+        // ambil nama toko utama.
+        let tenantName = 'Toko Capstone';
         
         const { data: workspaceData, error: wsErr } = await supabase
           .from('workspaces')
@@ -64,7 +64,7 @@ export default function CartPanel() {
         if (wsErr) {
           console.warn("Gagal membaca tabel workspaces (Mungkin RLS memblokir kasir atau tabel tidak ada). Mencoba tabel 'tenants'...", wsErr);
           
-          // Fallback: Mencoba mencari di tabel 'tenants' jika tabel 'workspaces' gagal
+          // coba tabel tenants jika workspaces tidak tersedia.
           const { data: tenantData, error: tenantErr } = await supabase
             .from('tenants')
             .select('name')
@@ -77,7 +77,7 @@ export default function CartPanel() {
           tenantName = workspaceData.name;
         }
 
-        // Set nama usaha yang berhasil ditemukan ke dalam state struk
+        // simpan identitas toko yang ditemukan.
         setStoreInfo({
           name: tenantName,
           branch: branchData?.name || 'Pusat'
