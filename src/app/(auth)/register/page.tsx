@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
-import { Store, User, Mail, Lock, ArrowRight, UserSquare2, Eye, EyeOff, CheckCircle, AlertCircle } from 'lucide-react'; 
+import { Store, User, Mail, Lock, ArrowRight, UserSquare2, Eye, EyeOff, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react'; 
 
 export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
@@ -11,7 +11,6 @@ export default function RegisterPage() {
   
   const [showPassword, setShowPassword] = useState(false);
   
-  // State untuk menangani umpan balik antarmuka
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   
@@ -21,7 +20,6 @@ export default function RegisterPage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
-    // Sembunyikan error saat pengguna mulai mengetik ulang
     if (status === 'error') setStatus('idle');
   };
 
@@ -38,7 +36,6 @@ export default function RegisterPage() {
 
       if (authError) throw authError;
       
-      // Deteksi jika email sudah pernah terdaftar (Supabase mengembalikan user dengan identities kosong pada kasus ini)
       if (authData.user && authData.user.identities && authData.user.identities.length === 0) {
         throw new Error("Email ini sudah terdaftar. Silakan gunakan email lain atau langsung masuk ke akun Anda.");
       }
@@ -77,7 +74,6 @@ export default function RegisterPage() {
         if (userErr) throw userErr;
       }
 
-      // Ubah status menjadi success alih-alih melempar alert dan redirect
       setStatus('success');
 
     } catch (error: unknown) {
@@ -92,7 +88,6 @@ export default function RegisterPage() {
     }
   };
 
-  // Tampilan layar sukses setelah mendaftar (Menunggu konfirmasi email)
   if (status === 'success') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
@@ -115,7 +110,17 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
+      {/* Tombol Kembali ke Beranda */}
+      <div className="w-full max-w-md mb-4 flex justify-start">
+        <Link 
+          href="/" 
+          className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-blue-600 transition"
+        >
+          <ArrowLeft size={18} /> Kembali ke Beranda
+        </Link>
+      </div>
+
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
         <div className="bg-blue-600 p-6 text-center text-white">
           <div className="bg-white/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
@@ -126,8 +131,6 @@ export default function RegisterPage() {
         </div>
 
         <form onSubmit={handleRegister} className="p-6 space-y-4">
-          
-          {/* Tampilan Error */}
           {status === 'error' && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg flex items-start gap-2 text-sm animate-in fade-in slide-in-from-top-2">
               <AlertCircle size={18} className="shrink-0 mt-0.5" />
