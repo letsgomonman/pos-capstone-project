@@ -37,13 +37,11 @@ export default function CartPanel() {
     orderNote?: string
   } | null>(null);
 
-  // ambil identitas toko untuk struk.
   useEffect(() => {
     async function fetchStoreInfo() {
       if (!session?.tenantId || !session?.branchId) return;
       
       try {
-        // ambil nama cabang tempat kasir bertugas.
         const { data: branchData, error: branchErr } = await supabase
           .from('branches')
           .select('name')
@@ -52,7 +50,6 @@ export default function CartPanel() {
 
         if (branchErr) console.warn("Peringatan: Gagal memuat nama cabang", branchErr);
 
-        // ambil nama toko utama.
         let tenantName = 'Toko Capstone';
         
         const { data: workspaceData, error: wsErr } = await supabase
@@ -62,22 +59,17 @@ export default function CartPanel() {
           .single();
 
         if (wsErr) {
-          console.warn("Gagal membaca tabel workspaces (Mungkin RLS memblokir kasir atau tabel tidak ada). Mencoba tabel 'tenants'...", wsErr);
-          
-          // coba tabel tenants jika workspaces tidak tersedia.
-          const { data: tenantData, error: tenantErr } = await supabase
+          const { data: tenantData } = await supabase
             .from('tenants')
             .select('name')
             .eq('id', session.tenantId)
             .single();
             
           if (tenantData?.name) tenantName = tenantData.name;
-          else console.error("Gagal menemukan nama toko di tabel workspaces maupun tenants:", tenantErr);
         } else if (workspaceData?.name) {
           tenantName = workspaceData.name;
         }
 
-        // simpan identitas toko yang ditemukan.
         setStoreInfo({
           name: tenantName,
           branch: branchData?.name || 'Pusat'
@@ -113,62 +105,74 @@ export default function CartPanel() {
 
     setIsProcessing(true); 
 
-    const result = await processCheckout({
-      items, 
-      totalAmount: grandTotal, 
-      paymentMethod, 
-      tenantId: session.tenantId, 
-      branchId: session.branchId, 
-      cashierId: session.userId,
-      customerName: buyerName,
-      customerPhone: buyerPhone,
-      discountAmount,
-      orderNote
-    });
-
-    if (result.success) {
-      try {
-        for (const item of items) {
-          const { data: currentInv } = await supabase
-            .from('branch_inventory')
-            .select('id, stock_qty')
-            .eq('branch_id', session.branchId)
-            .eq('product_id', item.id) 
-            .single();
-
-          if (currentInv) {
-            await supabase
-              .from('branch_inventory')
-              .update({ stock_qty: currentInv.stock_qty - item.cartQty })
-              .eq('id', currentInv.id);
-          }
-        }
-      } catch (stockError) {
-        console.error("Gagal melakukan sinkronisasi stok akhir:", stockError);
-      }
-
-      window.dispatchEvent(new Event('refreshProductGrid'));
-
-      setLastTx({ 
-        id: result.offlineId, 
-        amount: grandTotal, 
-        change: changeAmount, 
-        method: paymentMethod,
-        items: [...items],
-        customerName: buyerName || 'Umum',
-        customerPhone: buyerPhone || '',
-        orderNote: orderNote
+    try {
+      const result = await processCheckout({
+        items, 
+        totalAmount: grandTotal, 
+        paymentMethod, 
+        tenantId: session.tenantId, 
+        branchId: session.branchId, 
+        cashierId: session.userId,
+        customerName: buyerName,
+        customerPhone: buyerPhone,
+        discountAmount,
+        orderNote
       });
-      
-      clearCart();
-      setDiscountValue('');
-      setCashReceived('');
-      setOrderNote('');
-    } else {
-      alert("Terjadi kesalahan sistem.");
+
+      if (result.success) {
+        
+        // 1. Eksekusi Stok di Latar Belakang (Fire-and-forget) agar UI kasir tidak terkunci internet lemot
+        (async () => {
+          if (!navigator.onLine) return; // Abaikan jika jelas offline
+          try {
+            for (const item of items) {
+              const { data: currentInv } = await supabase
+                .from('branch_inventory')
+                .select('id, stock_qty')
+                .eq('branch_id', session.branchId)
+                .eq('product_id', item.id) 
+                .single();
+
+              if (currentInv) {
+                await supabase
+                  .from('branch_inventory')
+                  .update({ stock_qty: currentInv.stock_qty - item.cartQty })
+                  .eq('id', currentInv.id);
+              }
+            }
+          } catch (stockError) {
+            console.warn("Peringatan Latar Belakang: Gagal memotong stok (akan diulang saat sinkronisasi)", stockError);
+          }
+        })();
+
+        // 2. Langsung eksekusi refresh UI & tampilkan Struk tanpa menunggu cloud
+        window.dispatchEvent(new Event('refreshProductGrid'));
+
+        setLastTx({ 
+          id: result.offlineId, 
+          amount: grandTotal, 
+          change: changeAmount, 
+          method: paymentMethod,
+          items: [...items],
+          customerName: buyerName || 'Umum',
+          customerPhone: buyerPhone || '',
+          orderNote: orderNote
+        });
+        
+        clearCart();
+        setDiscountValue('');
+        setCashReceived('');
+        setOrderNote('');
+      } else {
+        alert("Gagal memproses transaksi. Mohon periksa penyimpanan lokal browser Anda.");
+      }
+    } catch (err) {
+      console.error("Payment Exception:", err);
+      alert("Terjadi kesalahan yang tidak terduga pada sistem.");
+    } finally {
+      // 3. Jaminan status isProcessing dibebaskan 
+      setIsProcessing(false); 
     }
-    
-    setIsProcessing(false); 
   };
 
   const handleDecrease = (item: CartItem) => {
