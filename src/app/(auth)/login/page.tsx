@@ -4,8 +4,9 @@ import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image'; // Tambahkan impor komponen Image
 import { useSession } from '@/hooks/useSession';
-import { Store, Mail, Lock, LogIn, Eye, EyeOff, ArrowLeft, AlertCircle } from 'lucide-react';
+import { Mail, Lock, LogIn, Eye, EyeOff, ArrowLeft, AlertCircle } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -14,10 +15,7 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-
   const [showPassword, setShowPassword] = useState(false);
-  
-  // State untuk penanganan pesan gagal
   const [errorMsg, setErrorMsg] = useState('');
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -75,7 +73,6 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 relative">
         
-        {/* Tombol Kembali ke Beranda */}
         <Link 
           href="/" 
           className="absolute top-4 left-4 z-10 p-2 bg-white/20 hover:bg-white/30 backdrop-blur-md rounded-full text-white transition group"
@@ -85,16 +82,26 @@ export default function LoginPage() {
         </Link>
 
         <div className="bg-blue-600 p-6 pt-10 text-center text-white relative">
-          <div className="bg-white/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
-            <Store size={32} />
+          {/* MULAI PERUBAHAN: Menampilkan Logo pada Form Login */}
+          <div className="bg-white rounded-lg p-2 w-32 flex items-center justify-center mx-auto mb-4 shadow-sm">
+             <Image 
+               src="/logo.svg" 
+               alt="Logo Sistem" 
+               width={120} 
+               height={40} 
+               className="h-10 w-auto"
+               style={{ width: 'auto' }}
+               priority
+             />
           </div>
+          {/* AKHIR PERUBAHAN */}
+          
           <h2 className="text-2xl font-bold">Masuk ke Dasbor</h2>
           <p className="text-blue-100 text-sm mt-1">Kelola penjualan dan pantau usaha Anda.</p>
         </div>
 
         <form onSubmit={handleLogin} className="p-6 space-y-4">
           
-          {/* Penampil Pesan Error */}
           {errorMsg && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg flex items-start gap-2 text-sm animate-in fade-in slide-in-from-top-2">
               <AlertCircle size={18} className="shrink-0 mt-0.5" />

@@ -3,14 +3,13 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
-import { Store, User, Mail, Lock, ArrowRight, UserSquare2, Eye, EyeOff, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react'; 
+import Image from 'next/image'; // Tambahkan impor komponen Image
+import { Store, User, Mail, Lock, ArrowRight, Eye, EyeOff, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react'; 
 
 export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isOwner, setIsOwner] = useState(true); 
-  
   const [showPassword, setShowPassword] = useState(false);
-  
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   
@@ -92,8 +91,6 @@ export default function RegisterPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 p-8 text-center relative">
-          
-          {/* Tombol Kembali (Status Sukses) */}
           <Link 
             href="/" 
             className="absolute top-4 left-4 p-2 text-gray-400 hover:text-gray-600 transition"
@@ -101,7 +98,6 @@ export default function RegisterPage() {
           >
             <ArrowLeft size={20} />
           </Link>
-
           <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6 mt-4">
             <CheckCircle size={40} />
           </div>
@@ -122,8 +118,6 @@ export default function RegisterPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 relative">
-        
-        {/* Tombol Kembali ke Beranda */}
         <Link 
           href="/" 
           className="absolute top-4 left-4 z-10 p-2 bg-white/20 hover:bg-white/30 backdrop-blur-md rounded-full text-white transition group"
@@ -133,9 +127,19 @@ export default function RegisterPage() {
         </Link>
 
         <div className="bg-blue-600 p-6 pt-10 text-center text-white relative">
-          <div className="bg-white/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
-            {isOwner ? <Store size={32} /> : <UserSquare2 size={32} />}
+          {/* MULAI PERUBAHAN: Menampilkan Logo pada Form Registrasi */}
+          <div className="bg-white rounded-lg p-2 w-32 flex items-center justify-center mx-auto mb-4 shadow-sm">
+             <Image 
+               src="/logo.svg" 
+               alt="Logo Sistem" 
+               width={120} 
+               height={40} 
+               className="h-10 w-auto"
+               style={{ width: 'auto' }}
+               priority
+             />
           </div>
+          {/* AKHIR PERUBAHAN */}
           <h2 className="text-2xl font-bold">{isOwner ? 'Mulai Usaha Anda' : 'Daftar Pegawai'}</h2>
           <p className="text-blue-100 text-sm mt-1">Buat akun untuk masuk ke dalam sistem.</p>
         </div>

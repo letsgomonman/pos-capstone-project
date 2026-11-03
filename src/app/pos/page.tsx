@@ -8,13 +8,13 @@ import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { LogOut, Archive } from 'lucide-react';
+import Image from 'next/image'; // Tambahkan impor komponen Image
 
 export default function POSPage() {
   const { session, isLoading, initializeSession, logout } = useSession();
   const router = useRouter();
   const [isClosing, setIsClosing] = useState(false);
 
-  // Informasi toko dan cabang: state
   const [storeName, setStoreName] = useState('Memuat Toko...');
   const [branchName, setBranchName] = useState('');
 
@@ -32,19 +32,16 @@ export default function POSPage() {
     }
   }, [session, isLoading, router]);
 
-  // Informasi toko dan cabang: pemuatan data
   useEffect(() => {
     const fetchStoreInfo = async () => {
       if (!session?.tenantId || !session?.branchId) return;
       try {
-        // Informasi toko dan cabang: nama usaha
         const { data: tenant } = await supabase
           .from('tenants')
           .select('name')
           .eq('id', session.tenantId)
           .single();
 
-        // Informasi toko dan cabang: nama cabang
         const { data: branch } = await supabase
           .from('branches')
           .select('name')
@@ -129,9 +126,21 @@ export default function POSPage() {
     <div className="flex flex-col h-screen w-full bg-gray-100 overflow-hidden text-gray-900">
       <header className="bg-white shadow-sm h-16 flex items-center justify-between px-6 shrink-0 z-10">
         <div className="flex items-center gap-4">
-          <div className="bg-blue-600 text-white font-bold px-3 py-1 rounded">POS</div>
           
-          {/* Informasi toko dan cabang: header */}
+          {/* MULAI PERUBAHAN: Menampilkan logo SVG di sudut antarmuka Kasir */}
+          <div className="flex items-center justify-center bg-white pr-2 py-1">
+             <Image 
+               src="/logo.svg" 
+               alt="POS Logo" 
+               width={100} 
+               height={32} 
+               className="h-8 w-auto object-contain"
+               style={{ width: 'auto' }}
+               priority
+             />
+          </div>
+          {/* AKHIR PERUBAHAN */}
+          
           <h1 className="font-semibold text-lg text-gray-800 hidden md:block">
             {storeName} {branchName && <span className="text-gray-500 font-normal"> - {branchName}</span>}
           </h1>

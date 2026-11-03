@@ -1,6 +1,7 @@
 import Link from 'next/link';
+import Image from 'next/image'; // Tambahkan impor komponen Image
 import { 
-  Store, TrendingUp, ShieldCheck, Zap, Layers, ArrowRight, 
+  TrendingUp, ShieldCheck, Zap, Layers, ArrowRight, 
   BarChart3, Box, Users, CheckCircle2 
 } from 'lucide-react';
 
@@ -12,12 +13,17 @@ export default function LandingPage() {
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="bg-blue-600 text-white p-1.5 rounded-lg">
-              <Store size={24} />
-            </div>
-            <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-700 to-blue-500">
-              POS Capstone
-            </span>
+            {/* MULAI PERUBAHAN: Menampilkan logo SVG */}
+            <Image 
+              src="/logo.svg" 
+              alt="POS Capstone Logo" 
+              width={160} 
+              height={40} 
+              className="h-10 w-auto" 
+              style={{ width: 'auto' }}
+              priority
+            />
+            {/* AKHIR PERUBAHAN */}
           </div>
           <div className="flex items-center gap-4">
             <Link href="/login" className="text-sm font-medium text-gray-600 hover:text-blue-600 transition">
