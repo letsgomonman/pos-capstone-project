@@ -5,9 +5,15 @@ import { supabase } from '@/lib/supabase';
 import { useSession } from '@/hooks/useSession';
 import { Search, Plus, Edit2, X, Box, Trash2, TrendingUp, AlertTriangle, ThermometerSnowflake, Filter, Package } from 'lucide-react';
 
-// Tipe data inventaris dari database
+/**
+ * Halaman pengelolaan inventaris untuk cabang yang sedang aktif.
+ * Selain stok dan harga, halaman ini menampilkan ringkasan penjualan 30 hari
+ * untuk membantu pengguna mengenali kondisi pergerakan dan ketersediaan produk.
+ */
+
+// Bentuk data inventaris dan relasi produk seperti yang dibaca dari Supabase.
 interface RawInventoryItem {
-  id: string; 
+  id: string;
   stock_qty: number;
   branch_price: number;
   products: {
@@ -19,38 +25,42 @@ interface RawInventoryItem {
   };
 }
 
-// Tipe data inventaris dengan analitik penjualan
+// Data inventaris setelah dilengkapi jumlah terjual dan status analitik.
 interface InventoryItem extends RawInventoryItem {
   sold30Days: number;
   status: 'Fast-Moving' | 'Slow-Moving' | 'Low-Stock' | 'Normal';
 }
 
 export default function InventoryPage() {
+  // Identitas cabang dan tenant menentukan cakupan data yang dikelola.
   const { session } = useSession();
+
+  // Data tabel, status pemuatan, dan nilai kontrol pencarian/filter.
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
-  
+
+  // Mengendalikan tampilan modal serta mencegah pengiriman form berulang.
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Form tambah produk
+  // Nilai form tambah produk; angka tetap dapat kosong saat pengguna mengetik.
   const [newName, setNewName] = useState('');
   const [newCategory, setNewCategory] = useState('');
   const [newPrice, setNewPrice] = useState<number | string>('');
   const [newStock, setNewStock] = useState<number | string>('');
-  
-  // Form edit inventaris
+
+  // Nilai form edit, termasuk ID inventaris dan ID produk yang diperbarui terpisah.
   const [editId, setEditId] = useState('');
-  const [editProductId, setEditProductId] = useState(''); 
+  const [editProductId, setEditProductId] = useState('');
   const [editName, setEditName] = useState('');
   const [editCategory, setEditCategory] = useState('');
   const [editPrice, setEditPrice] = useState<number | string>('');
   const [editStock, setEditStock] = useState<number | string>('');
 
-  // Kategori inventaris yang tersedia
+  // Kategori unik dari data saat ini dipakai sebagai saran pada kedua form.
   const uniqueCategories: string[] = Array.from(
     new Set(
       inventory
@@ -59,12 +69,17 @@ export default function InventoryPage() {
     )
   );
 
+  /**
+   * Memuat inventaris cabang beserta penjualan 30 hari terakhir, lalu
+   * menggabungkan keduanya untuk menghitung status setiap produk.
+   */
   const fetchInventory = async () => {
+    // Data cabang belum tersedia sebelum sesi selesai dimuat.
     if (!session?.branchId) return;
     setIsLoading(true);
-    
+
     try {
-      // Ambil data inventaris dan produk
+      // Ambil stok dan harga cabang berikut detail produk terkait.
       const { data: invData, error: invErr } = await supabase
         .from('branch_inventory')
         .select(`
@@ -78,10 +93,11 @@ export default function InventoryPage() {
 
       if (invErr) throw invErr;
 
-      // Ambil data penjualan selama 30 hari terakhir
+      // Batas waktu dipakai untuk menghitung penjualan selama 30 hari terakhir.
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      
+
+      // Hanya hitung transaksi pada cabang aktif yang tidak dibatalkan.
       const { data: salesData, error: salesErr } = await supabase
         .from('transaction_items')
         .select('product_id, qty, transactions!inner(branch_id, created_at, is_void)')
@@ -91,7 +107,8 @@ export default function InventoryPage() {
 
       if (salesErr) throw salesErr;
 
-      // Hitung total penjualan per produk
+      // Akumulasikan kuantitas transaksi berdasarkan ID produk agar pencocokan
+      // dengan baris inventaris dapat dilakukan tanpa pencarian berulang.
       const salesMap: Record<string, number> = {};
       if (salesData) {
         salesData.forEach((sale: unknown) => {
@@ -100,19 +117,21 @@ export default function InventoryPage() {
         });
       }
 
-      // Gabungkan data inventaris dan analitik penjualan
+      // Tambahkan analitik pada setiap baris inventaris sebelum ditampilkan.
       const enrichedInventory: InventoryItem[] = (invData as unknown as RawInventoryItem[]).map(item => {
         const sold = salesMap[item.products.id] || 0;
         const stock = item.stock_qty;
-        
+
         // Hitung rata-rata penjualan harian selama 30 hari
-        const avgDailySales = sold / 30; 
-        
+        const avgDailySales = sold / 30;
+
+        // Urutan pemeriksaan ini penting: stok rendah mengesampingkan status
+        // cepat/lambat bergerak agar kebutuhan pengisian stok terlihat dahulu.
         let status: InventoryItem['status'] = 'Normal';
-        
+
         // Tandai stok rendah jika kurang dari kebutuhan 3 hari atau tersisa maksimal 2 unit
         if (stock <= (avgDailySales * 3) || stock <= 2) {
-          status = 'Low-Stock'; 
+          status = 'Low-Stock';
         } else if (sold >= 30) {
           status = 'Fast-Moving';
         } else if (sold <= 3 && stock >= 15) {
@@ -122,6 +141,8 @@ export default function InventoryPage() {
         return { ...item, sold30Days: sold, status };
       });
 
+      // Tampilkan stok terendah lebih dahulu agar item yang perlu diperhatikan
+      // mudah ditemukan.
       enrichedInventory.sort((a, b) => a.stock_qty - b.stock_qty);
       setInventory(enrichedInventory);
 
@@ -132,6 +153,7 @@ export default function InventoryPage() {
     }
   };
 
+  // Muat ulang data setiap kali cabang pada sesi berubah.
   useEffect(() => {
     const initializeData = async () => {
       if (session?.branchId) {
@@ -142,12 +164,17 @@ export default function InventoryPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.branchId]);
 
+  /**
+   * Membuat produk pada katalog tenant, kemudian membuat stok awalnya
+   * untuk cabang aktif. Kedua data disimpan pada tabel yang berbeda.
+   */
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!session) return;
     setIsSaving(true);
 
     try {
+      // SKU sederhana dibuat otomatis agar produk baru langsung memiliki kode.
       const autoSku = `SKU-${Date.now().toString().slice(-6)}`;
       const { data: productData, error: pErr } = await supabase
         .from('products')
@@ -162,6 +189,7 @@ export default function InventoryPage() {
 
       if (pErr) throw pErr;
 
+      // Hubungkan produk baru dengan cabang dan simpan stok serta harga cabang.
       const { error: invErr } = await supabase
         .from('branch_inventory')
         .insert({
@@ -175,7 +203,8 @@ export default function InventoryPage() {
 
       setIsAddOpen(false);
       setNewName(''); setNewCategory(''); setNewPrice(''); setNewStock('');
-      
+
+      // Sinkronkan tabel setelah penyimpanan berhasil agar produk baru terlihat.
       fetchInventory();
 
     } catch (error: unknown) {
@@ -186,6 +215,10 @@ export default function InventoryPage() {
     }
   };
 
+  /**
+   * Memperbarui stok/harga pada inventaris cabang dan kategori pada katalog
+   * produk, karena kedua nilai tersebut disimpan pada tabel yang berbeda.
+   */
   const handleEditInventory = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
@@ -201,13 +234,14 @@ export default function InventoryPage() {
 
       if (invError) throw invError;
 
+      // Kategori merupakan atribut produk, bukan atribut stok cabang.
       const { error: prodError } = await supabase
         .from('products')
         .update({ category: editCategory || 'Umum' })
         .eq('id', editProductId);
 
       if (prodError) throw prodError;
-      
+
       setIsEditOpen(false);
       fetchInventory();
     } catch (error: unknown) {
@@ -218,9 +252,13 @@ export default function InventoryPage() {
     }
   };
 
+  /**
+   * Meminta konfirmasi sebelum menghapus produk dari katalog. Baris inventaris
+   * lokal dihapus dari tampilan hanya setelah permintaan ke database berhasil.
+   */
   const handleDeleteProduct = async (inventoryId: string, productId: string, productName: string) => {
     if (!confirm(`Apakah Anda yakin ingin menghapus "${productName}" dari katalog?`)) return;
-    
+
     try {
       const { error } = await supabase.from('products').delete().eq('id', productId);
       if (error) throw error;
@@ -231,16 +269,18 @@ export default function InventoryPage() {
     }
   };
 
+  // Isi nilai form edit dari baris yang dipilih, lalu tampilkan modalnya.
   const openEditModal = (item: InventoryItem) => {
     setEditId(item.id);
     setEditProductId(item.products.id);
     setEditName(item.products.name);
-    setEditCategory(item.products.category || ''); 
+    setEditCategory(item.products.category || '');
     setEditPrice(item.branch_price);
     setEditStock(item.stock_qty);
     setIsEditOpen(true);
   };
 
+  // Terapkan pencarian pada nama, SKU, atau kategori, lalu cocokkan status.
   const filteredInventory = inventory.filter(item => {
     const matchSearch = 
       item.products.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -254,7 +294,7 @@ export default function InventoryPage() {
 
   return (
     <div className="p-8">
-      {/* Header inventaris */}
+      {/* Judul halaman dan pintasan untuk membuka form produk baru. */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Master Inventory</h1>
@@ -268,7 +308,7 @@ export default function InventoryPage() {
         </button>
       </div>
 
-      {/* Pencarian dan filter inventaris */}
+      {/* Kontrol pencarian teks dan filter status analitik tabel. */}
       <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-6 flex flex-col md:flex-row gap-4 justify-between items-center">
         <div className="relative w-full md:max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
@@ -296,7 +336,7 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* Tabel inventaris */}
+      {/* Tabel utama menampilkan ringkasan stok, harga, penjualan, dan tindakan. */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -311,6 +351,7 @@ export default function InventoryPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
+              {/* Berikan umpan balik terpisah saat memuat, saat kosong, atau saat ada hasil. */}
               {isLoading ? (
                 <tr>
                   <td colSpan={6} className="p-8 text-center text-gray-500 animate-pulse">Menganalisis pergerakan data...</td>
@@ -393,7 +434,7 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* Modal tambah produk */}
+      {/* Modal tambah: kategori dapat dipilih dari saran atau diisi sebagai kategori baru. */}
       {isAddOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
@@ -404,6 +445,7 @@ export default function InventoryPage() {
               </button>
             </div>
             <form onSubmit={handleAddProduct} className="p-4 space-y-4">
+              {/* Datalist membantu memakai kategori yang sudah ada tanpa membatasi kategori baru. */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Kategori Barang</label>
                 <input 
@@ -420,6 +462,7 @@ export default function InventoryPage() {
                   ))}
                 </datalist>
               </div>
+              {/* Form produk baru membutuhkan nama, harga, dan jumlah stok awal. */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nama Produk</label>
                 <input required type="text" value={newName} onChange={(e) => setNewName(e.target.value)} className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-gray-900" placeholder="Contoh: Kopi Pandan" />
@@ -445,7 +488,7 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* Modal edit inventaris */}
+      {/* Modal edit: nama hanya ditampilkan, sedangkan kategori, harga, dan stok dapat diubah. */}
       {isEditOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">

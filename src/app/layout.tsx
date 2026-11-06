@@ -13,13 +13,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "POS Capstone",
+  title: "POS",
   description: "Sistem Kasir Offline-First",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "POS Capstone",
+    title: "POS",
   },
   formatDetection: {
     telephone: false,

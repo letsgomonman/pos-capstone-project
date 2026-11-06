@@ -5,28 +5,37 @@ import { supabase } from '@/lib/supabase';
 import { useSession } from '@/hooks/useSession';
 import { Store, Plus, MapPin, X, Edit2, Trash2, CheckCircle2 } from 'lucide-react';
 
+// Bentuk data cabang yang digunakan oleh daftar dan formulir pada halaman ini.
 interface Branch { id: string; name: string; address: string; created_at: string; }
 
 export default function BranchesPage() {
+  // Sesi menyediakan identitas tenant serta cabang yang sedang dipantau.
   const { session, login } = useSession();
+
+  // Data cabang dan status pemuatan daftar.
   const [branches, setBranches] = useState<Branch[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
+
+  // Status dan nilai input untuk formulir tambah cabang.
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [newBranchName, setNewBranchName] = useState('');
   const [newBranchAddress, setNewBranchAddress] = useState('');
 
+  // Status dan nilai input untuk formulir edit cabang.
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editBranchId, setEditBranchId] = useState('');
   const [editBranchName, setEditBranchName] = useState('');
   const [editBranchAddress, setEditBranchAddress] = useState('');
 
+  // Muat ulang daftar ketika tenant pada sesi berubah.
   useEffect(() => {
     const fetchBranches = async () => {
+      // Tanpa tenant, permintaan tidak dapat dibatasi ke usaha yang benar.
       if (!session?.tenantId) return;
       setIsLoading(true);
       try {
+        // Ambil hanya cabang milik tenant aktif, lalu urutkan dari yang paling lama.
         const { data, error } = await supabase
           .from('branches')
           .select('*')
@@ -34,81 +43,101 @@ export default function BranchesPage() {
           .order('created_at', { ascending: true });
         
         if (error) throw error;
+        // Gunakan daftar kosong jika respons tidak berisi data.
         setBranches(data || []);
       } catch (error) {
+        // Catat detail teknis agar kegagalan pemuatan dapat ditelusuri.
         console.error("Gagal memuat cabang:", error);
       } finally {
+        // Hentikan indikator pemuatan baik permintaan berhasil maupun gagal.
         setIsLoading(false);
       }
     };
     fetchBranches();
   }, [session?.tenantId]);
 
+  // Validasi formulir, simpan cabang baru, lalu perbarui tampilan tanpa memuat ulang.
   const handleAddBranch = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Pastikan cabang baru selalu terhubung ke tenant yang sedang masuk.
     if (!session?.tenantId) return;
     setIsSaving(true);
     try {
+      // Simpan data cabang dan minta baris yang baru dibuat untuk ditampilkan.
       const { data, error } = await supabase.from('branches').insert({
         tenant_id: session.tenantId, name: newBranchName, address: newBranchAddress
       }).select().single();
       if (error) throw error;
 
+      // Tambahkan hasil penyimpanan ke daftar dan bersihkan formulir.
       setBranches(prev => [...prev, data]);
       setIsAddOpen(false);
       setNewBranchName(''); setNewBranchAddress('');
     } catch (error: unknown) {
+      // Beri tahu pengguna jika penyimpanan tidak berhasil.
       alert("Gagal menambah cabang.");
     } finally {
+      // Aktifkan kembali tombol simpan setelah permintaan selesai.
       setIsSaving(false);
     }
   };
 
+  // Simpan perubahan cabang terpilih dan sinkronkan nilainya ke daftar lokal.
   const handleEditBranch = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
     try {
+      // Perbarui nama dan alamat berdasarkan ID cabang yang sedang diedit.
       const { error } = await supabase.from('branches').update({
         name: editBranchName, address: editBranchAddress
       }).eq('id', editBranchId);
       if (error) throw error;
 
+      // Perbarui satu baris yang berubah tanpa mengambil ulang seluruh daftar.
       setBranches(prev => prev.map(b => b.id === editBranchId ? { ...b, name: editBranchName, address: editBranchAddress } : b));
       setIsEditOpen(false);
     } catch (error: unknown) {
+      // Informasikan kegagalan agar pengguna dapat mencoba lagi.
       alert("Gagal mengedit cabang.");
     } finally {
       setIsSaving(false);
     }
   };
 
+  // Isi formulir edit dengan data cabang lalu tampilkan modalnya.
   const openEditModal = (branch: Branch) => {
     setEditBranchId(branch.id); setEditBranchName(branch.name); setEditBranchAddress(branch.address || ''); setIsEditOpen(true);
   };
 
-  // Fitur: Menghapus cabang
+  // Hapus cabang setelah memastikan aturan jumlah minimum dan cabang aktif terpenuhi.
   const handleDeleteBranch = async (branchId: string, branchName: string) => {
+    // Usaha wajib menyisakan setidaknya satu cabang.
     if (branches.length <= 1) {
       alert("Usaha harus memiliki minimal 1 cabang.");
       return;
     }
+    // Cabang yang sedang dipakai tidak boleh dihapus sebelum pengguna beralih.
     if (branchId === session?.branchId) {
       alert("Tidak bisa menghapus cabang yang sedang aktif digunakan. Silakan beralih ke cabang lain terlebih dahulu.");
       return;
     }
+    // Konfirmasi terlebih dahulu karena penghapusan bersifat permanen dan berdampak pada data terkait.
     if (!confirm(`Hapus permanen cabang "${branchName}"? Semua data transaksi dan inventaris di cabang ini akan ikut terhapus.`)) return;
 
     try {
+      // Hapus cabang di basis data, lalu keluarkan dari daftar di halaman.
       const { error } = await supabase.from('branches').delete().eq('id', branchId);
       if (error) throw error;
       setBranches(prev => prev.filter(b => b.id !== branchId));
     } catch (error) {
+      // Penghapusan dapat gagal jika masih ada data yang merujuk ke cabang.
       alert("Gagal menghapus cabang. Pastikan tidak ada data yang mengunci.");
     }
   };
 
-  // Fitur: Beralih cabang aktif
+  // Ganti cabang aktif pada sesi agar data aplikasi mengikuti lokasi pilihan.
   const handleSwitchBranch = (branchId: string) => {
+    // Tidak ada yang perlu dilakukan jika sesi belum tersedia atau cabang sudah aktif.
     if (!session || session.branchId === branchId) return;
     
     // Perbarui sesi dengan ID cabang baru; perubahan tersimpan otomatis ke localStorage.
@@ -118,8 +147,10 @@ export default function BranchesPage() {
     window.location.assign(window.location.origin + '/branches');
   };
 
+  // Tampilan utama: judul halaman, tindakan, daftar cabang, dan modal formulir.
   return (
     <div className="p-8">
+      {/* Judul dan tindakan utama untuk membuka formulir tambah cabang. */}
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Manajemen Cabang</h1>
@@ -130,19 +161,23 @@ export default function BranchesPage() {
         </button>
       </div>
 
+      {/* Daftar cabang menampilkan status pemuatan, keadaan kosong, atau kartu cabang. */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {isLoading ? <p className="text-gray-500">Memuat data cabang...</p> : branches.length === 0 ? <p className="text-gray-500">Belum ada cabang.</p> : (
           branches.map(b => {
+            // Tandai cabang yang ID-nya sama dengan cabang aktif pada sesi.
             const isActive = b.id === session?.branchId;
             return (
               <div key={b.id} className={`bg-white p-6 rounded-xl border-2 transition relative flex flex-col gap-3 group ${isActive ? 'border-green-500 shadow-md' : 'border-gray-200 hover:shadow-md'}`}>
                 
+                {/* Label ini hanya terlihat pada kartu cabang yang sedang dipantau. */}
                 {isActive && (
                   <span className="absolute top-4 right-4 bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded flex items-center gap-1">
                     <CheckCircle2 size={14} /> Dipantau Saat Ini
                   </span>
                 )}
 
+                {/* Ikon identitas cabang dan tombol tindakan untuk mengedit atau menghapusnya. */}
                 <div className="flex justify-between items-start">
                   <div className={`p-3 rounded-lg w-fit ${isActive ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
                     <Store size={24} />
@@ -161,6 +196,7 @@ export default function BranchesPage() {
                   </div>
                 </div>
                 
+                {/* Tampilkan nama dan alamat; gunakan teks pengganti jika alamat belum tersedia. */}
                 <div>
                   <h3 className="text-xl font-bold text-gray-900">{b.name}</h3>
                   <p className="text-sm text-gray-500 flex items-start gap-1 mt-1">
@@ -168,6 +204,7 @@ export default function BranchesPage() {
                   </p>
                 </div>
 
+                {/* Cabang lain dapat dipilih sebagai cabang aktif dari kartu ini. */}
                 {!isActive && (
                   <button onClick={() => handleSwitchBranch(b.id)} className="mt-auto pt-4 flex items-center text-blue-600 font-semibold hover:text-blue-800 transition">
                     Pantau Cabang Ini
@@ -179,46 +216,54 @@ export default function BranchesPage() {
         )}
       </div>
 
-      {/* Modal tambah cabang */}
+      {/* Modal tambah: nilai formulir dikendalikan oleh state dan dikirim ke handler tambah. */}
       {isAddOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
             <div className="flex justify-between items-center p-4 border-b">
               <h2 className="text-lg font-bold text-gray-900">Tambah Cabang</h2>
+              {/* Tombol tutup membatalkan proses tanpa menyimpan data. */}
               <button onClick={() => setIsAddOpen(false)} className="text-gray-400 hover:text-gray-700"><X size={24} /></button>
             </div>
             <form onSubmit={handleAddBranch} className="p-4 space-y-4">
+              {/* Nama wajib diisi sebelum formulir dapat dikirim. */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nama Cabang</label>
                 <input required type="text" value={newBranchName} onChange={(e) => setNewBranchName(e.target.value)} className="w-full p-2 border rounded-lg" />
               </div>
+              {/* Alamat juga diwajibkan dan disimpan sebagai bagian dari data cabang. */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Alamat</label>
                 <textarea required rows={3} value={newBranchAddress} onChange={(e) => setNewBranchAddress(e.target.value)} className="w-full p-2 border rounded-lg" />
               </div>
+              {/* Cegah pengiriman berulang saat penyimpanan sedang berlangsung. */}
               <button type="submit" disabled={isSaving} className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg hover:bg-blue-700 transition">Simpan</button>
             </form>
           </div>
         </div>
       )}
 
-      {/* Modal edit cabang */}
+      {/* Modal edit: formulir menggunakan state cabang terpilih dan handler penyuntingan. */}
       {isEditOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
             <div className="flex justify-between items-center p-4 border-b">
               <h2 className="text-lg font-bold text-gray-900">Edit Cabang</h2>
+              {/* Tutup modal tanpa menerapkan perubahan yang belum disimpan. */}
               <button onClick={() => setIsEditOpen(false)} className="text-gray-400 hover:text-gray-700"><X size={24} /></button>
             </div>
             <form onSubmit={handleEditBranch} className="p-4 space-y-4">
+              {/* Nilai awal berasal dari cabang yang dipilih; perubahan tersimpan di state edit. */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nama Cabang</label>
                 <input required type="text" value={editBranchName} onChange={(e) => setEditBranchName(e.target.value)} className="w-full p-2 border rounded-lg" />
               </div>
+              {/* Alamat cabang dapat diperbarui bersama namanya. */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Alamat</label>
                 <textarea required rows={3} value={editBranchAddress} onChange={(e) => setEditBranchAddress(e.target.value)} className="w-full p-2 border rounded-lg" />
               </div>
+              {/* Tombol dinonaktifkan selama permintaan penyimpanan berlangsung. */}
               <button type="submit" disabled={isSaving} className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg hover:bg-blue-700 transition">Simpan Perubahan</button>
             </form>
           </div>

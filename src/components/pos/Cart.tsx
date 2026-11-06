@@ -1,5 +1,6 @@
 'use client';
 
+// Integrasi data keranjang, proses checkout, struk, sesi pengguna, dan layanan toko.
 import { useCartStore, CartItem } from '@/hooks/useCartStore'; 
 import { processCheckout } from '@/lib/checkout';
 import { generateReceiptPDF } from '@/lib/pdf-generator';
@@ -7,25 +8,37 @@ import { sendWhatsAppReceipt } from '@/lib/whatsapp';
 import { useState, useEffect } from 'react';
 import { useSession } from '@/hooks/useSession';
 import { supabase } from '@/lib/supabase';
+// Ikon untuk kontrol pelanggan, pembayaran, diskon, catatan, dan pengosongan keranjang.
 import { UserPlus, QrCode, Banknote, Tag, FileText, Trash2 } from 'lucide-react';
 
+/**
+ * Panel kasir yang menampilkan isi keranjang, menghitung pembayaran,
+ * memproses transaksi, dan menyediakan opsi pengiriman struk.
+ */
 export default function CartPanel() {
+  // Data dan aksi keranjang dikelola bersama oleh store agar tetap konsisten dengan katalog.
   const { items, getTotal, clearCart, updateQuantity, removeItem } = useCartStore();
+  // Identitas tenant, cabang, dan kasir digunakan saat menyimpan transaksi.
   const { session } = useSession();
   
+  // Mencegah pembayaran dikirim berulang dan memberi umpan balik saat transaksi berlangsung.
   const [isProcessing, setIsProcessing] = useState(false); 
   
+  // Informasi pelanggan dan instruksi pesanan bersifat opsional.
   const [buyerName, setBuyerName] = useState('');
   const [buyerPhone, setBuyerPhone] = useState('');
   const [orderNote, setOrderNote] = useState('');
   
+  // Pilihan pembayaran serta nilai diskon dan uang tunai yang dimasukkan kasir.
   const [paymentMethod, setPaymentMethod] = useState<'qris' | 'cash'>('qris');
   const [discountType, setDiscountType] = useState<'nominal' | 'percent'>('nominal');
   const [discountValue, setDiscountValue] = useState<number | ''>('');
   const [cashReceived, setCashReceived] = useState<number | ''>('');
   
+  // Nilai awal tetap tersedia jika nama toko atau cabang belum berhasil dimuat.
   const [storeInfo, setStoreInfo] = useState({ name: 'Toko Capstone', branch: 'Pusat' });
 
+  // Snapshot transaksi terakhir dipakai untuk menampilkan konfirmasi dan membuat/mengirim struk.
   const [lastTx, setLastTx] = useState<{ 
     id: string, 
     amount: number, 
@@ -37,11 +50,14 @@ export default function CartPanel() {
     orderNote?: string
   } | null>(null);
 
+  // Ambil nama toko dan cabang untuk dicantumkan pada struk setelah sesi tersedia.
   useEffect(() => {
     async function fetchStoreInfo() {
+      // Tanpa konteks tenant dan cabang, informasi toko tidak dapat dicari.
       if (!session?.tenantId || !session?.branchId) return;
       
       try {
+        // Nama cabang berasal dari cabang aktif pada sesi kasir.
         const { data: branchData, error: branchErr } = await supabase
           .from('branches')
           .select('name')
@@ -50,6 +66,7 @@ export default function CartPanel() {
 
         if (branchErr) console.warn("Peringatan: Gagal memuat nama cabang", branchErr);
 
+        // Gunakan nama workspace; untuk akun lama, coba tabel tenants sebagai cadangan.
         let tenantName = 'Toko Capstone';
         
         const { data: workspaceData, error: wsErr } = await supabase
@@ -75,13 +92,16 @@ export default function CartPanel() {
           branch: branchData?.name || 'Pusat'
         });
       } catch (error) {
+        // Kegagalan memuat label struk tidak menghentikan fungsi kasir.
         console.error("Kesalahan sistem saat memuat info toko:", error);
       }
     }
 
     fetchStoreInfo();
+    // Muat ulang label toko bila identitas sesi berubah.
   }, [session]);
 
+  // Hitung subtotal dari store, lalu terapkan diskon nominal atau persentase.
   const subtotal = getTotal();
   
   let discountAmount = 0;
@@ -92,20 +112,25 @@ export default function CartPanel() {
     discountAmount = rawDiscount;
   }
   
+  // Total tidak boleh negatif; kembalian hanya dihitung untuk pembayaran tunai.
   const grandTotal = Math.max(0, subtotal - discountAmount);
   const rawCash = Number(cashReceived) || 0;
   const changeAmount = paymentMethod === 'cash' ? Math.max(0, rawCash - grandTotal) : 0;
   
+  // Status ini dipakai untuk mencegah transaksi kosong atau pembayaran tunai yang kurang.
   const isCashInsufficient = paymentMethod === 'cash' && rawCash < grandTotal;
   const isCartEmpty = items.length === 0;
 
+  // Validasi dan simpan transaksi, kemudian tampilkan ringkasan pembayaran berhasil.
   const handlePayment = async () => {
+    // Pemeriksaan awal mencegah pemanggilan checkout pada input yang belum memenuhi syarat.
     if (isCartEmpty || isCashInsufficient) return;
     if (!session) return alert("Sesi tidak valid, harap login ulang.");
 
     setIsProcessing(true); 
 
     try {
+      // Checkout menyimpan transaksi dengan konteks kasir, pelanggan, diskon, dan catatan.
       const result = await processCheckout({
         items, 
         totalAmount: grandTotal, 
@@ -121,7 +146,8 @@ export default function CartPanel() {
 
       if (result.success) {
         
-        // 1. Eksekusi Stok di Latar Belakang (Fire-and-forget) agar UI kasir tidak terkunci internet lemot
+        // Kurangi stok secara asinkron agar respons UI tidak menunggu permintaan jaringan.
+        // Saat offline, perubahan stok dilewati karena sinkronisasi akan menanganinya kemudian.
         (async () => {
           if (!navigator.onLine) return; // Abaikan jika jelas offline
           try {
@@ -145,9 +171,10 @@ export default function CartPanel() {
           }
         })();
 
-        // 2. Langsung eksekusi refresh UI & tampilkan Struk tanpa menunggu cloud
+        // Beri tahu katalog untuk memuat ulang stok tanpa menunggu proses stok di atas.
         window.dispatchEvent(new Event('refreshProductGrid'));
 
+        // Simpan salinan detail transaksi agar tetap tersedia setelah keranjang dikosongkan.
         setLastTx({ 
           id: result.offlineId, 
           amount: grandTotal, 
@@ -159,27 +186,31 @@ export default function CartPanel() {
           orderNote: orderNote
         });
         
+        // Kosongkan data transaksi yang baru selesai untuk menyiapkan pesanan berikutnya.
         clearCart();
         setDiscountValue('');
         setCashReceived('');
         setOrderNote('');
       } else {
+        // Checkout melaporkan kegagalan tanpa menampilkan konfirmasi sukses.
         alert("Gagal memproses transaksi. Mohon periksa penyimpanan lokal browser Anda.");
       }
     } catch (err) {
       console.error("Payment Exception:", err);
       alert("Terjadi kesalahan yang tidak terduga pada sistem.");
     } finally {
-      // 3. Jaminan status isProcessing dibebaskan 
+      // Pastikan tombol pembayaran aktif kembali baik checkout berhasil maupun gagal.
       setIsProcessing(false); 
     }
   };
 
+  // Kurangi kuantitas satu per satu; jika tinggal satu, hapus barang dari keranjang.
   const handleDecrease = (item: CartItem) => {
     if (item.cartQty > 1) updateQuantity(item.id, item.cartQty - 1);
     else removeItem(item.id);
   };
   
+  // Tambah kuantitas selama jumlahnya belum mencapai stok yang diketahui.
   const handleIncrease = (item: CartItem) => {
     if (item.stock_qty && item.cartQty >= item.stock_qty) {
        alert(`Stok ${item.name} tidak mencukupi! Sisa stok: ${item.stock_qty}`);
@@ -188,6 +219,7 @@ export default function CartPanel() {
     updateQuantity(item.id, item.cartQty + 1);
   };
 
+  // Tampilan pascatransaksi menyediakan konfirmasi, informasi kembalian, dan opsi struk.
   if (lastTx) {
     return (
       <div className="p-4 border-l bg-green-50 h-full flex flex-col justify-center items-center text-center text-gray-900">
@@ -202,6 +234,7 @@ export default function CartPanel() {
         )}
         
         <div className="flex flex-col gap-2 w-full">
+          {/* Buat berkas PDF menggunakan data transaksi dan identitas toko yang telah dimuat. */}
           <button 
             onClick={() => generateReceiptPDF({
               transactionId: lastTx.id, 
@@ -217,6 +250,7 @@ export default function CartPanel() {
           >
             Unduh PDF Struk
           </button>
+          {/* Kirim detail struk melalui WhatsApp; nomor pelanggan diperlukan untuk tujuan kirim. */}
           <button 
             onClick={() => {
               if (!lastTx.customerPhone) return alert("Nomor HP pelanggan kosong.");
@@ -235,6 +269,7 @@ export default function CartPanel() {
           >
             Kirim Struk via WA
           </button>
+          {/* Tutup ringkasan transaksi dan bersihkan identitas pelanggan untuk transaksi baru. */}
           <button 
             onClick={() => {
               setLastTx(null); setBuyerName(''); setBuyerPhone('');
@@ -248,10 +283,12 @@ export default function CartPanel() {
     );
   }
 
+  // Tampilan utama POS: daftar barang, data pelanggan, ringkasan biaya, dan pembayaran.
   return (
     <div className="flex flex-col h-full bg-white border-l border-gray-200">
       <div className="p-4 border-b border-gray-200 shrink-0 flex justify-between items-center">
         <h2 className="text-xl font-bold text-gray-900">Pesanan Saat Ini</h2>
+        {/* Tombol kosongkan hanya ditampilkan jika ada barang di keranjang. */}
         {items.length > 0 && (
           <button 
             onClick={clearCart} 
@@ -262,10 +299,12 @@ export default function CartPanel() {
         )}
       </div>
       
+      {/* Area gulir memuat barang dan detail pelanggan agar bagian pembayaran tetap terlihat. */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/50">
         {items.length === 0 ? (
           <div className="text-center text-gray-400 mt-10">Keranjang masih kosong</div>
         ) : (
+          // Setiap kartu menyediakan subtotal barang dan kontrol kuantitas.
           items.map(item => (
             <div key={item.id} className="flex flex-col bg-white p-3 border border-gray-200 rounded-lg shadow-sm gap-2">
               <div className="flex justify-between font-semibold text-gray-900">
@@ -284,6 +323,7 @@ export default function CartPanel() {
           ))
         )}
 
+        {/* Form pelanggan hanya muncul saat transaksi memiliki barang. */}
         {items.length > 0 && (
           <div className="bg-white p-3 rounded-lg border border-gray-200 space-y-3 mt-4 shadow-sm">
             <div className="flex items-center gap-2 text-sm font-bold text-gray-700">
@@ -301,7 +341,9 @@ export default function CartPanel() {
         )}
       </div>
 
+      {/* Ringkasan pembayaran dan aksi checkout berada di bagian bawah panel. */}
       <div className="p-4 bg-white border-t border-gray-200 shrink-0">
+        {/* Kasir dapat memasukkan diskon nominal (rupiah) atau persentase. */}
         <div className="flex items-center justify-between mb-3 bg-gray-50 p-2 rounded-lg border border-gray-200">
           <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
             <Tag size={16} /> Diskon
@@ -325,6 +367,7 @@ export default function CartPanel() {
           </div>
         </div>
 
+        {/* Tampilkan subtotal, potongan yang berlaku, dan total akhir yang ditagihkan. */}
         <div className="space-y-1 mb-4 text-sm">
           <div className="flex justify-between text-gray-500">
             <span>Subtotal</span>
@@ -342,6 +385,7 @@ export default function CartPanel() {
           </div>
         </div>
 
+        {/* Pilihan metode menentukan validasi uang diterima dan kalkulasi kembalian. */}
         <div className="grid grid-cols-2 gap-2 mb-4">
           <button 
             onClick={() => setPaymentMethod('qris')}
@@ -357,6 +401,7 @@ export default function CartPanel() {
           </button>
         </div>
 
+        {/* Input uang tunai dan pesan kekurangan hanya relevan untuk pembayaran tunai. */}
         {paymentMethod === 'cash' && (
           <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
             <label className="block text-xs font-bold text-blue-800 mb-1">UANG DITERIMA DARI PELANGGAN</label>
@@ -376,6 +421,7 @@ export default function CartPanel() {
           </div>
         )}
 
+        {/* Nonaktifkan checkout saat memproses, keranjang kosong, atau uang tunai kurang. */}
         <button 
           onClick={handlePayment}
           disabled={isProcessing || isCartEmpty || isCashInsufficient}

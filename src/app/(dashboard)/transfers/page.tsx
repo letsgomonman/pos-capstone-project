@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useSession } from '@/hooks/useSession';
 import { ArrowLeftRight, Plus, X, Package, CheckCircle, Truck, FileText, TrendingUp, AlertCircle, BarChart2, Info } from 'lucide-react';
 
+// Bentuk setiap barang yang tercatat dalam satu transaksi transfer.
 interface TransferItem {
   id: string;
   product_id: string;
@@ -12,6 +13,7 @@ interface TransferItem {
   products: { name: string; sku: string };
 }
 
+// Data transfer beserta cabang asal, cabang tujuan, dan daftar barangnya.
 interface TransferRecord {
   id: string;
   status: 'draft' | 'in_transit' | 'received';
@@ -23,29 +25,37 @@ interface TransferRecord {
   stock_transfer_items: TransferItem[];
 }
 
+// Data cabang dan stok produk yang tersedia di cabang pengguna saat ini.
 interface Branch { id: string; name: string; }
 interface LocalInv { product_id: string; stock_qty: number; products: { name: string; sku: string; base_price: number } }
 
 export default function TransfersPage() {
+  // Sesi menentukan tenant dan cabang yang menjadi sumber transfer.
   const { session } = useSession();
+
+  // Data untuk riwayat transfer, pilihan cabang tujuan, dan pilihan stok sumber.
   const [transfers, setTransfers] = useState<TransferRecord[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [inventory, setInventory] = useState<LocalInv[]>([]);
   
+  // Status pemuatan halaman, visibilitas formulir, dan proses simpan/perubahan status.
   const [isLoading, setIsLoading] = useState(true); 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   
+  // Mengubah nilai ini memicu pemuatan ulang data setelah transaksi diperbarui.
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
+  // Nilai formulir transfer yang dipilih atau dimasukkan pengguna.
   const [selectedToBranch, setSelectedToBranch] = useState('');
   const [selectedProduct, setSelectedProduct] = useState('');
   const [transferQty, setTransferQty] = useState(1);
 
-  // Rekomendasi Transfer: simpan data analitik cabang tujuan.
+  // Ringkasan stok dan rata-rata penjualan produk di cabang tujuan terpilih.
   const [smartRec, setSmartRec] = useState<{ destStock: number, avgSales: number } | null>(null);
   const [isRecLoading, setIsRecLoading] = useState(false);
 
+  // Ringkasan yang ditampilkan pada kartu analitik di atas tabel riwayat.
   const [analytics, setAnalytics] = useState({
     pendingTransfers: 0,
     totalVolumeTransferred: 0,
@@ -53,10 +63,13 @@ export default function TransfersPage() {
   });
 
   useEffect(() => {
+    // Mengambil riwayat, cabang tujuan, dan stok cabang aktif saat sesi siap atau perlu diperbarui.
     const fetchLogisticsData = async () => {
+      // Data logistik memerlukan identitas tenant dan cabang yang sedang aktif.
       if (!session?.tenantId || !session?.branchId) return;
 
       try {
+        // Ambil semua transfer milik tenant, urutkan dari transaksi terbaru.
         const { data: txData, error: txError } = await supabase
           .from('stock_transfers')
           .select(`
@@ -72,6 +85,7 @@ export default function TransfersPage() {
         
         const records = txData as unknown as TransferRecord[];
         
+        // Hitung antrean yang belum selesai dan volume barang yang sudah diterima.
         let pending = 0;
         let volume = 0;
         const productCounts: Record<string, number> = {};
@@ -88,6 +102,7 @@ export default function TransfersPage() {
           }
         });
 
+        // Cari produk dengan jumlah unit selesai dipindahkan paling banyak.
         let topProduct = 'Belum Ada';
         let maxQty = 0;
         Object.entries(productCounts).forEach(([name, qty]) => {
@@ -97,6 +112,7 @@ export default function TransfersPage() {
           }
         });
 
+        // Cabang aktif dikecualikan agar pengguna hanya dapat memilih cabang lain.
         const { data: branchData, error: branchError } = await supabase
           .from('branches')
           .select('id, name')
@@ -105,6 +121,7 @@ export default function TransfersPage() {
 
         if (branchError) throw branchError;
         
+        // Hanya stok positif yang dapat dipilih sebagai sumber transfer.
         const { data: invData, error: invError } = await supabase
           .from('branch_inventory')
           .select('product_id, stock_qty, products(name, sku, base_price)')
@@ -113,6 +130,7 @@ export default function TransfersPage() {
 
         if (invError) throw invError;
         
+        // Simpan data hasil kueri dan ringkasan untuk dirender oleh halaman.
         setTransfers(records);
         setAnalytics({
           pendingTransfers: pending,
@@ -123,6 +141,7 @@ export default function TransfersPage() {
         setInventory(invData as unknown as LocalInv[]);
 
       } catch (error) {
+        // Tampilkan kegagalan pemuatan di konsol; status loading tetap ditutup pada finally.
         console.error("Gagal memuat data logistik:", error);
       } finally {
         setIsLoading(false);
@@ -132,16 +151,17 @@ export default function TransfersPage() {
     fetchLogisticsData();
   }, [session, refreshTrigger]);
 
-  // Rekomendasi Transfer: muat data saat cabang tujuan atau produk berubah.
+  // Perbarui rekomendasi setiap kali pilihan cabang tujuan atau produk berubah.
   useEffect(() => {
     const fetchRecommendation = async () => {
+      // Tanpa kedua pilihan, rekomendasi tidak relevan sehingga panel dikosongkan.
       if (!selectedToBranch || !selectedProduct) {
         setSmartRec(null);
         return;
       }
       setIsRecLoading(true);
       try {
-        // Rekomendasi Transfer: ambil stok cabang tujuan.
+        // Cari stok produk terpilih di cabang tujuan; bila belum tercatat, anggap nol.
         const { data: destInv } = await supabase
           .from('branch_inventory')
           .select('stock_qty')
@@ -151,7 +171,7 @@ export default function TransfersPage() {
 
         const destStock = destInv ? destInv.stock_qty : 0;
 
-        // Rekomendasi Transfer: ambil rata-rata penjualan harian cabang tujuan.
+        // Ambil rata-rata penjualan harian untuk membantu menilai kebutuhan cabang.
         const { data: stats } = await supabase
           .from('product_sales_stats')
           .select('avg_daily_sales')
@@ -161,10 +181,12 @@ export default function TransfersPage() {
 
         const avgSales = stats ? stats.avg_daily_sales : 0;
 
+        // Gabungkan metrik yang akan ditampilkan pada panel rekomendasi.
         setSmartRec({ destStock, avgSales });
       } catch (err) {
         console.error("Gagal menarik data rekomendasi:", err);
-        setSmartRec({ destStock: 0, avgSales: 0 }); // Rekomendasi Transfer: gunakan nilai default.
+        // Tetapkan nilai aman agar panel tetap dapat ditampilkan jika kueri gagal.
+        setSmartRec({ destStock: 0, avgSales: 0 });
       } finally {
         setIsRecLoading(false);
       }
@@ -173,17 +195,20 @@ export default function TransfersPage() {
     fetchRecommendation();
   }, [selectedToBranch, selectedProduct]);
 
+  // Validasi formulir, lalu simpan header transfer dan satu baris barang sebagai draft.
   const handleCreateTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!session) return;
     setIsProcessing(true);
 
     try {
+      // Pastikan stok cabang sumber cukup sebelum membuat transaksi.
       const itemInv = inventory.find(i => i.product_id === selectedProduct);
       if (!itemInv || itemInv.stock_qty < transferQty) {
         throw new Error("Stok tidak mencukupi untuk ditransfer!");
       }
 
+      // Buat header terlebih dahulu karena item transfer merujuk ke ID header ini.
       const { data: transferHeader, error: headerErr } = await supabase
         .from('stock_transfers')
         .insert({
@@ -196,6 +221,7 @@ export default function TransfersPage() {
 
       if (headerErr) throw headerErr;
 
+      // Simpan produk dan kuantitas yang menjadi isi transfer.
       const { error: itemErr } = await supabase
         .from('stock_transfer_items')
         .insert({
@@ -206,6 +232,7 @@ export default function TransfersPage() {
 
       if (itemErr) throw itemErr;
 
+      // Tutup formulir, kembalikan nilainya ke awal, lalu muat ulang riwayat.
       setIsModalOpen(false);
       setSelectedToBranch('');
       setSelectedProduct('');
@@ -214,6 +241,7 @@ export default function TransfersPage() {
       setRefreshTrigger(prev => prev + 1); 
 
     } catch (error: unknown) {
+      // Tampilkan penyebab kegagalan jika tersedia, tanpa mengasumsikan tipe error.
       const msg = error instanceof Error ? error.message : String(error);
       alert('Gagal membuat transfer: ' + msg);
     } finally {
@@ -221,10 +249,12 @@ export default function TransfersPage() {
     }
   };
 
+  // Memajukan transfer dari draft ke dikirim, atau dari dikirim ke diterima.
   const handleUpdateStatus = async (transferId: string, currentStatus: string, fromBranchId: string, toBranchId: string, items: TransferItem[]) => {
     setIsProcessing(true);
     try {
       if (currentStatus === 'draft') {
+        // Saat barang dikirim, kurangi stok setiap item dari cabang sumber.
         for (const item of items) {
           const { data: senderInv } = await supabase
             .from('branch_inventory')
@@ -239,9 +269,11 @@ export default function TransfersPage() {
               .eq('id', senderInv.id);
           }
         }
+        // Tandai transfer sebagai sedang dalam perjalanan setelah stok sumber dikurangi.
         await supabase.from('stock_transfers').update({ status: 'in_transit' }).eq('id', transferId);
 
       } else if (currentStatus === 'in_transit') {
+        // Saat barang diterima, tambahkan kuantitas ke persediaan cabang tujuan.
         for (const item of items) {
           const { data: receiverInv } = await supabase
             .from('branch_inventory')
@@ -255,6 +287,7 @@ export default function TransfersPage() {
               .update({ stock_qty: receiverInv.stock_qty + item.qty })
               .eq('id', receiverInv.id);
           } else {
+            // Jika produk belum memiliki baris stok di tujuan, buat baris persediaan baru.
             const { data: prodMaster } = await supabase.from('products').select('base_price').eq('id', item.product_id).single();
             await supabase.from('branch_inventory').insert({
               branch_id: toBranchId,
@@ -264,9 +297,11 @@ export default function TransfersPage() {
             });
           }
         }
+        // Simpan waktu penerimaan bersama status akhir transaksi.
         await supabase.from('stock_transfers').update({ status: 'received', received_at: new Date().toISOString() }).eq('id', transferId);
       }
       
+      // Perbarui daftar dan angka analitik setelah perubahan status.
       setRefreshTrigger(prev => prev + 1);
     } catch (error: unknown) {
       console.error("Gagal update status:", error);
@@ -276,6 +311,7 @@ export default function TransfersPage() {
     }
   };
 
+  // Pilih label dan tampilan badge berdasarkan status transfer yang tersimpan.
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'draft': return <span className="flex items-center w-fit gap-1 px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-bold"><FileText size={12}/> Draft</span>;
@@ -287,6 +323,7 @@ export default function TransfersPage() {
 
   return (
     <div className="p-8 pb-20">
+      {/* Judul halaman dan pintasan untuk membuka formulir transfer baru. */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Transfer Stok</h1>
@@ -300,6 +337,7 @@ export default function TransfersPage() {
         </button>
       </div>
 
+      {/* Kartu ringkasan hanya ditampilkan setelah data utama selesai dimuat. */}
       {!isLoading && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-start gap-4">
@@ -326,6 +364,7 @@ export default function TransfersPage() {
         </div>
       )}
 
+      {/* Riwayat mencakup indikator loading, keadaan kosong, atau daftar transaksi. */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -373,6 +412,7 @@ export default function TransfersPage() {
                       {getStatusBadge(tx.status)}
                     </td>
                     <td className="p-4 text-center">
+                      {/* Aksi yang tersedia mengikuti tahap transaksi; proses bersamaan dinonaktifkan. */}
                       {tx.status === 'draft' && (
                         <button 
                           onClick={() => handleUpdateStatus(tx.id, 'draft', tx.from_branch_id, tx.to_branch_id, tx.stock_transfer_items)}
@@ -403,6 +443,7 @@ export default function TransfersPage() {
         </div>
       </div>
 
+      {/* Modal formulir hanya dirender ketika pengguna memilih membuat transfer. */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
@@ -414,6 +455,7 @@ export default function TransfersPage() {
             </div>
             <form onSubmit={handleCreateTransfer} className="p-4 space-y-4">
               
+              {/* Pilih cabang penerima; cabang sumber berasal dari sesi aktif. */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Cabang Tujuan</label>
                 <select 
@@ -428,6 +470,7 @@ export default function TransfersPage() {
                 {branches.length === 0 && <p className="text-xs text-red-500 mt-1">Anda harus membuat cabang lain di database terlebih dahulu.</p>}
               </div>
 
+              {/* Daftar produk bersumber dari stok positif di cabang aktif. */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Pilih Produk (Dari stok Anda)</label>
                 <select 
@@ -445,7 +488,7 @@ export default function TransfersPage() {
                 </select>
               </div>
 
-              {/* Rekomendasi Transfer: panel analitik cabang tujuan. */}
+              {/* Tampilkan stok tujuan dan laju penjualan sebagai konteks keputusan transfer. */}
               {selectedToBranch && selectedProduct && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm flex items-start gap-3">
                   <Info size={20} className="shrink-0 mt-0.5 text-blue-600" />
@@ -460,6 +503,7 @@ export default function TransfersPage() {
                 </div>
               )}
 
+              {/* Kuantitas harus minimal satu; kecukupan stok divalidasi saat formulir dikirim. */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Jumlah Transfer (Qty)</label>
                 <input 
@@ -472,6 +516,7 @@ export default function TransfersPage() {
                 />
               </div>
 
+              {/* Tombol simpan dinonaktifkan selama proses berjalan atau pilihan wajib belum lengkap. */}
               <div className="pt-4 border-t flex justify-end gap-2">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 border rounded-lg text-gray-700 hover:bg-gray-50 font-medium">Batal</button>
                 <button type="submit" disabled={isProcessing || !selectedToBranch || !selectedProduct} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:bg-gray-400 transition">

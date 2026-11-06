@@ -1,19 +1,21 @@
 import Link from 'next/link';
-import Image from 'next/image'; // Tambahkan impor komponen Image
+import Image from 'next/image';
 import { 
   TrendingUp, ShieldCheck, Zap, Layers, ArrowRight, 
   BarChart3, Box, Users, CheckCircle2 
 } from 'lucide-react';
 
+// Halaman publik yang memperkenalkan POS dan mengarahkan pengunjung untuk masuk atau mendaftar.
 export default function LandingPage() {
   return (
+    // Wadah utama menetapkan tinggi minimum, warna latar, tipografi, dan warna seleksi teks.
     <div className="min-h-screen bg-gray-50 font-sans selection:bg-blue-200">
       
-      {/* NAVBAR */}
+      {/* Navigasi tetap di bagian atas agar tautan masuk dan pendaftaran selalu mudah ditemukan. */}
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            {/* MULAI PERUBAHAN: Menampilkan logo SVG */}
+            {/* Logo dioptimalkan oleh Next.js dan diberi prioritas karena tampil di area awal halaman. */}
             <Image 
               src="/logo.svg" 
               alt="POS Capstone Logo" 
@@ -23,8 +25,8 @@ export default function LandingPage() {
               style={{ width: 'auto' }}
               priority
             />
-            {/* AKHIR PERUBAHAN */}
           </div>
+          {/* Tautan autentikasi tersedia dari navigasi pada ukuran layar apa pun. */}
           <div className="flex items-center gap-4">
             <Link href="/login" className="text-sm font-medium text-gray-600 hover:text-blue-600 transition">
               Masuk
@@ -36,15 +38,16 @@ export default function LandingPage() {
         </div>
       </nav>
 
-      {/* HERO SECTION */}
+      {/* Bagian hero menyampaikan manfaat utama produk dan menyediakan jalur daftar atau masuk. */}
       <section className="relative pt-20 pb-32 overflow-hidden">
-        {/* Dekorasi Background */}
+        {/* Bentuk warna dekoratif berada di belakang konten dan tidak menangkap interaksi pengguna. */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-3xl h-full opacity-30 pointer-events-none">
           <div className="absolute top-20 left-10 w-72 h-72 bg-blue-400 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob"></div>
           <div className="absolute top-20 right-10 w-72 h-72 bg-purple-400 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-2000"></div>
           <div className="absolute -bottom-8 left-40 w-72 h-72 bg-pink-400 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-4000"></div>
         </div>
 
+        {/* Konten ditempatkan di atas dekorasi dengan lebar yang dibatasi agar tetap mudah dibaca. */}
         <div className="max-w-7xl mx-auto px-6 relative z-10 text-center">
           <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-sm font-bold mb-6">
             <Zap size={14} className="text-yellow-500 fill-yellow-500" />
@@ -67,7 +70,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* FEATURES GRID */}
+      {/* Grid ini merangkum enam kemampuan utama produk dalam kartu yang responsif. */}
       <section className="py-24 bg-white border-y border-gray-100">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-16">
@@ -76,7 +79,7 @@ export default function LandingPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {/* Feature 1 */}
+            {/* Pengelolaan beberapa usaha dan cabang dari satu akun pemilik. */}
             <div className="bg-gray-50 p-8 rounded-2xl border border-gray-100 hover:border-blue-200 hover:shadow-md transition">
               <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center mb-6">
                 <Layers size={24} />
@@ -87,7 +90,7 @@ export default function LandingPage() {
               </p>
             </div>
 
-            {/* Feature 2 */}
+            {/* Analitik membantu mengenali kecepatan penjualan produk dan mendukung integrasi ML. */}
             <div className="bg-gray-50 p-8 rounded-2xl border border-gray-100 hover:border-purple-200 hover:shadow-md transition">
               <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center mb-6">
                 <TrendingUp size={24} />
@@ -98,7 +101,7 @@ export default function LandingPage() {
               </p>
             </div>
 
-            {/* Feature 3 */}
+            {/* Perpindahan stok antar cabang dilengkapi pelacakan status dan volume. */}
             <div className="bg-gray-50 p-8 rounded-2xl border border-gray-100 hover:border-green-200 hover:shadow-md transition">
               <div className="w-12 h-12 bg-green-100 text-green-600 rounded-xl flex items-center justify-center mb-6">
                 <Box size={24} />
@@ -109,7 +112,7 @@ export default function LandingPage() {
               </p>
             </div>
 
-            {/* Feature 4 */}
+            {/* Pencatatan transaksi dan opsi pembatalan struk membantu menjaga akuntabilitas. */}
             <div className="bg-gray-50 p-8 rounded-2xl border border-gray-100 hover:border-orange-200 hover:shadow-md transition">
               <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center mb-6">
                 <ShieldCheck size={24} />
@@ -120,7 +123,7 @@ export default function LandingPage() {
               </p>
             </div>
 
-            {/* Feature 5 */}
+            {/* Peran owner, manajer, dan kasir dapat diberi tingkat akses yang sesuai. */}
             <div className="bg-gray-50 p-8 rounded-2xl border border-gray-100 hover:border-pink-200 hover:shadow-md transition">
               <div className="w-12 h-12 bg-pink-100 text-pink-600 rounded-xl flex items-center justify-center mb-6">
                 <Users size={24} />
@@ -131,7 +134,7 @@ export default function LandingPage() {
               </p>
             </div>
 
-            {/* Feature 6 */}
+            {/* Supabase dengan PostgreSQL menjadi dasar penyimpanan dan sinkronisasi data. */}
             <div className="bg-gray-50 p-8 rounded-2xl border border-gray-100 hover:border-teal-200 hover:shadow-md transition">
               <div className="w-12 h-12 bg-teal-100 text-teal-600 rounded-xl flex items-center justify-center mb-6">
                 <BarChart3 size={24} />
@@ -145,9 +148,9 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* CTA SECTION */}
+      {/* Ajakan bertindak mengulangi jalur pendaftaran setelah pengunjung melihat daftar fitur. */}
       <section className="py-24 bg-blue-900 relative overflow-hidden">
-        {/* Dekorasi Garis Halus */}
+        {/* Pola kisi menjadi latar dekoratif berkontras rendah agar teks tetap menonjol. */}
         <div className="absolute inset-0 opacity-10 bg-[linear-gradient(#fff_1px,transparent_1px),linear-gradient(90deg,#fff_1px,transparent_1px)] bg-[size:30px_30px]"></div>
         
         <div className="max-w-4xl mx-auto px-6 relative z-10 text-center">
@@ -161,6 +164,7 @@ export default function LandingPage() {
             </Link>
           </div>
           
+          {/* Poin singkat ini menegaskan manfaat dan dukungan yang ditawarkan kepada pengguna baru. */}
           <div className="mt-10 flex flex-wrap justify-center gap-6 text-blue-200 text-sm">
             <span className="flex items-center gap-2"><CheckCircle2 size={16} className="text-green-400" /> Bebas Biaya Setup</span>
             <span className="flex items-center gap-2"><CheckCircle2 size={16} className="text-green-400" /> Data Tersimpan Aman</span>
@@ -169,7 +173,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* FOOTER */}
+      {/* Tahun diperbarui otomatis agar informasi hak cipta tidak perlu diganti manual. */}
       <footer className="bg-white border-t border-gray-200 py-10 text-center">
         <p className="text-gray-500 font-medium">
           © {new Date().getFullYear()} POS Capstone Project. Dibangun dengan Next.js & Supabase.

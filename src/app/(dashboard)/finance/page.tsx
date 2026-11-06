@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useSession } from '@/hooks/useSession';
 import { Landmark, TrendingUp, Scale, Wallet, FileText, ArrowDownRight, ArrowUpRight, Plus, X } from 'lucide-react';
 
+// Ringkasan saldo satu akun setelah seluruh baris jurnal dijumlahkan.
 interface AccountBalance {
   code: string;
   name: string;
@@ -12,6 +13,7 @@ interface AccountBalance {
   balance: number;
 }
 
+// Bentuk data baris jurnal beserta akun yang dikembalikan oleh relasi Supabase.
 interface JournalLineData {
   debit: number;
   credit: number;
@@ -25,28 +27,34 @@ interface JournalLineData {
 
 export default function FinanceDashboardPage() {
   const { session } = useSession();
+  // Status pemuatan laporan dan pemicu untuk mengambil ulang data setelah transaksi baru.
   const [isLoading, setIsLoading] = useState(true);
-  const [refreshTrigger, setRefreshTrigger] = useState(0); // Memuat ulang data setelah pengeluaran dicatat.
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  // Menentukan laporan yang sedang ditampilkan.
   const [activeTab, setActiveTab] = useState<'laba_rugi' | 'neraca'>('laba_rugi');
   
+  // Saldo per akun dan laba bersih yang dipakai oleh kartu ringkasan serta laporan.
   const [balances, setBalances] = useState<AccountBalance[]>([]);
   const [netIncome, setNetIncome] = useState(0);
 
-  // Formulir pencatatan pengeluaran.
+  // Status dan nilai formulir modal untuk mencatat pengeluaran operasional.
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [expenseForm, setExpenseForm] = useState({
     amount: '',
-    category: '512', // Kategori beban default: Gaji & Upah.
-    source: '111',   // Sumber dana default: Kas Tunai.
+    category: '512', // Akun beban default: Gaji & Upah.
+    source: '111',   // Akun pembayaran default: Kas Tunai.
     description: ''
   });
 
+  // Ambil semua baris jurnal milik tenant, lalu hitung saldo dan laba bersih per kategori.
   useEffect(() => {
     const fetchFinancialData = async () => {
+      // Data belum dapat diminta sampai sesi menyediakan identitas tenant.
       if (!session?.tenantId) return;
 
       try {
+        // Relasi inner membatasi hasil ke jurnal tenant ini dan menyertakan rincian akun.
         const { data: lines, error } = await supabase
           .from('journal_lines')
           .select(`
@@ -58,6 +66,7 @@ export default function FinanceDashboardPage() {
 
         if (error) throw error;
 
+        // Akumulasi saldo berdasarkan kode akun agar setiap akun hanya muncul sekali.
         const accMap: Record<string, AccountBalance> = {};
 
         (lines as unknown as JournalLineData[] || []).forEach((line) => {
@@ -76,6 +85,7 @@ export default function FinanceDashboardPage() {
           const debit = Number(line.debit);
           const credit = Number(line.credit);
 
+          // Saldo normal debit bertambah oleh debit; saldo normal kredit bertambah oleh kredit.
           if (acc.normal_balance === 'debit') {
             accMap[code].balance += (debit - credit);
           } else {
@@ -86,6 +96,7 @@ export default function FinanceDashboardPage() {
         const aggregatedBalances = Object.values(accMap);
         setBalances(aggregatedBalances);
 
+        // Laba bersih adalah pendapatan dikurangi beban untuk seluruh saldo akun terkait.
         const revenue = aggregatedBalances.filter(a => a.category === 'Revenue').reduce((sum, a) => sum + a.balance, 0);
         const expense = aggregatedBalances.filter(a => a.category === 'Expense').reduce((sum, a) => sum + a.balance, 0);
         setNetIncome(revenue - expense);
@@ -93,16 +104,19 @@ export default function FinanceDashboardPage() {
       } catch (error) {
         console.error("Gagal memuat data keuangan:", error);
       } finally {
+        // Pastikan indikator pemuatan berhenti baik permintaan berhasil maupun gagal.
         setIsLoading(false);
       }
     };
 
     fetchFinancialData();
+    // Perbarui data saat tenant berubah atau setelah transaksi memicu refresh.
   }, [session, refreshTrigger]);
 
-  // Pencatatan pengeluaran melalui jurnal berpasangan.
+  // Catat pengeluaran dengan mendebit akun beban dan mengkredit akun sumber dana.
   const handleSubmitExpense = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Jangan kirim transaksi tanpa sesi atau nominal.
     if (!session || !expenseForm.amount) return;
     setIsSubmitting(true);
 
@@ -116,6 +130,7 @@ export default function FinanceDashboardPage() {
         .eq('tenant_id', session.tenantId)
         .in('account_code', [expenseForm.category, expenseForm.source]);
 
+      // Kedua akun harus tersedia agar jurnal berpasangan dapat dibuat.
       if (!accounts || accounts.length !== 2) throw new Error("Akun buku besar tidak ditemukan.");
 
       const debitAccountId = accounts.find(a => a.account_code === expenseForm.category)?.id;
@@ -123,7 +138,7 @@ export default function FinanceDashboardPage() {
 
       if (!debitAccountId || !creditAccountId) throw new Error("Gagal memetakan akun debit/kredit.");
 
-      // Buat header jurnal.
+      // Simpan header jurnal sebagai induk untuk dua baris transaksi.
       const { data: journal, error: journalErr } = await supabase
         .from('journals')
         .insert({
@@ -147,9 +162,10 @@ export default function FinanceDashboardPage() {
 
       if (lineErr) throw lineErr;
 
+      // Kosongkan formulir, tutup modal, dan minta dasbor memuat ulang saldo.
       setExpenseForm({ amount: '', category: '512', source: '111', description: '' });
       setIsExpenseModalOpen(false);
-      setRefreshTrigger(prev => prev + 1); // Memuat ulang data dasbor.
+      setRefreshTrigger(prev => prev + 1);
       alert("Pengeluaran berhasil dicatat dan dijurnal.");
 
     } catch (error) {
@@ -160,15 +176,18 @@ export default function FinanceDashboardPage() {
     }
   };
 
+  // Kelompok akun untuk menyusun rincian laporan laba rugi.
   const revenues = balances.filter(a => a.category === 'Revenue');
   const cogs = balances.filter(a => a.code === '511'); 
   const opex = balances.filter(a => a.category === 'Expense' && a.code !== '511'); 
 
+  // Hitung subtotal pendapatan, harga pokok, laba kotor, dan beban operasional.
   const totalRevenue = revenues.reduce((sum, a) => sum + a.balance, 0);
   const totalCogs = cogs.reduce((sum, a) => sum + a.balance, 0);
   const grossProfit = totalRevenue - totalCogs;
   const totalOpex = opex.reduce((sum, a) => sum + a.balance, 0);
   
+  // Kelompok akun untuk laporan posisi keuangan (neraca).
   const assets = balances.filter(a => a.category === 'Asset');
   const liabilities = balances.filter(a => a.category === 'Liability');
   const equities = balances.filter(a => a.category === 'Equity');
@@ -177,11 +196,13 @@ export default function FinanceDashboardPage() {
   const totalLiabilities = liabilities.reduce((sum, a) => sum + a.balance, 0);
   const totalEquityOriginal = equities.reduce((sum, a) => sum + a.balance, 0);
   
+  // Laba bersih periode berjalan menambah ekuitas pada persamaan neraca.
   const totalEquity = totalEquityOriginal + netIncome; 
   const totalLiabilitiesAndEquity = totalLiabilities + totalEquity;
 
   return (
     <div className="p-8 pb-20 max-w-5xl mx-auto">
+      {/* Judul halaman dan pintasan untuk membuka formulir pengeluaran. */}
       <div className="flex flex-col md:flex-row justify-between md:items-end gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
@@ -198,6 +219,7 @@ export default function FinanceDashboardPage() {
         </button>
       </div>
 
+      {/* Kartu ringkasan hanya ditampilkan setelah proses pengambilan data selesai. */}
       {!isLoading && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
@@ -231,7 +253,7 @@ export default function FinanceDashboardPage() {
           </div>
         </div>
       )}
-      {/* Navigasi laporan dan cetak PDF. */}
+      {/* Pemilih jenis laporan; tombol cetak membuka dialog cetak browser untuk menyimpan PDF. */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-gray-200 mb-6 gap-4 print:hidden">
         <div className="flex gap-4">
           <button 
@@ -256,11 +278,13 @@ export default function FinanceDashboardPage() {
         </button>
       </div>
 
+      {/* Tampilkan indikator pemuatan atau isi laporan sesuai status dan tab aktif. */}
       {isLoading ? (
         <div className="text-center py-20 text-gray-500">Mengkalkulasi buku besar...</div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden p-6">
           
+          {/* Laporan laba rugi merinci pendapatan, HPP, beban operasional, dan hasil bersih. */}
           {activeTab === 'laba_rugi' && (
             <div className="space-y-6">
               <div className="text-center mb-6">
@@ -268,6 +292,7 @@ export default function FinanceDashboardPage() {
                 <p className="text-sm text-gray-500">Berdasarkan Standar SAK EMKM</p>
               </div>
 
+              {/* Pendapatan dikelompokkan per akun sebelum ditampilkan sebagai total. */}
               <div>
                 <h3 className="font-bold text-gray-900 border-b pb-2 mb-3 text-lg flex items-center gap-2"><ArrowUpRight className="text-green-500" size={20}/> PENDAPATAN</h3>
                 {revenues.length === 0 ? <p className="text-gray-400 text-sm italic pl-7">Belum ada pendapatan dicatat.</p> : revenues.map(a => (
@@ -282,6 +307,7 @@ export default function FinanceDashboardPage() {
                 </div>
               </div>
 
+              {/* Harga pokok penjualan mengurangi pendapatan untuk memperoleh laba kotor. */}
               <div>
                 <h3 className="font-bold text-gray-900 border-b pb-2 mb-3 text-lg flex items-center gap-2"><ArrowDownRight className="text-orange-500" size={20}/> HARGA POKOK PENJUALAN</h3>
                 {cogs.map(a => (
@@ -296,6 +322,7 @@ export default function FinanceDashboardPage() {
                 </div>
               </div>
 
+              {/* Beban operasional tidak memasukkan akun HPP agar tidak dihitung dua kali. */}
               <div>
                 <h3 className="font-bold text-gray-900 border-b pb-2 mb-3 text-lg flex items-center gap-2"><ArrowDownRight className="text-red-500" size={20}/> BEBAN OPERASIONAL</h3>
                 {opex.length === 0 ? <p className="text-gray-400 text-sm italic pl-7">Belum ada beban operasional dicatat.</p> : opex.map(a => (
@@ -317,6 +344,7 @@ export default function FinanceDashboardPage() {
             </div>
           )}
 
+          {/* Neraca membandingkan total aset dengan kewajiban dan ekuitas. */}
           {activeTab === 'neraca' && (
             <div className="space-y-6">
               <div className="text-center mb-6">
@@ -326,6 +354,7 @@ export default function FinanceDashboardPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 
+                {/* Kolom aset menampilkan saldo setiap akun dan jumlah keseluruhan aset. */}
                 <div>
                   <h3 className="font-bold text-gray-900 border-b-2 border-gray-800 pb-2 mb-3 text-lg text-center bg-gray-100 rounded-t pt-2">ASET (HARTA)</h3>
                   {assets.map(a => (
@@ -340,6 +369,7 @@ export default function FinanceDashboardPage() {
                   </div>
                 </div>
 
+                {/* Kolom kanan merangkum kewajiban, modal, dan laba bersih berjalan. */}
                 <div>
                   <h3 className="font-bold text-gray-900 border-b-2 border-gray-800 pb-2 mb-3 text-lg text-center bg-gray-100 rounded-t pt-2">KEWAJIBAN & EKUITAS</h3>
                   
@@ -375,7 +405,7 @@ export default function FinanceDashboardPage() {
         </div>
       )}
 
-      {/* Modal pencatatan pengeluaran. */}
+      {/* Modal untuk mengisi detail transaksi yang kemudian disimpan sebagai jurnal. */}
       {isExpenseModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
@@ -387,6 +417,7 @@ export default function FinanceDashboardPage() {
             </div>
             <form onSubmit={handleSubmitExpense} className="p-5 space-y-4">
               
+              {/* Nominal transaksi; atribut required dan min mencegah nilai kosong atau nonpositif. */}
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-1">Nominal (Rp)</label>
                 <input 
@@ -400,6 +431,7 @@ export default function FinanceDashboardPage() {
                 />
               </div>
 
+              {/* Pilih akun beban yang akan menerima pencatatan debit. */}
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-1">Kategori Beban</label>
                 <select 
@@ -415,6 +447,7 @@ export default function FinanceDashboardPage() {
                 </select>
               </div>
 
+              {/* Pilih akun kas atau bank yang akan dicatat sebagai kredit. */}
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-1">Sumber Dana (Uang Keluar Dari)</label>
                 <select 
@@ -428,6 +461,7 @@ export default function FinanceDashboardPage() {
                 </select>
               </div>
 
+              {/* Keterangan menjadi deskripsi pada header jurnal. */}
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-1">Keterangan / Catatan</label>
                 <input 
@@ -440,6 +474,7 @@ export default function FinanceDashboardPage() {
                 />
               </div>
 
+              {/* Tombol simpan dinonaktifkan selama permintaan penyimpanan berlangsung. */}
               <div className="pt-4 flex justify-end gap-2 border-t">
                 <button type="button" onClick={() => setIsExpenseModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 font-bold rounded-lg transition">Batal</button>
                 <button type="submit" disabled={isSubmitting} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-bold disabled:bg-gray-400 transition">
