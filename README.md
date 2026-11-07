@@ -1,36 +1,32 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# POS Capstone Project 🚀
 
-## Getting Started
+**Pengembangan Sistem Kasir (Point of Sales) Berbasis Web yang Universal dan Adaptif untuk Berbagai Sektor**
 
-First, run the development server:
+Aplikasi Point of Sale (POS) berskala *Enterprise* yang dirancang khusus untuk UMKM. Sistem ini mengusung arsitektur **Offline-First**, memungkinkan kasir tetap beroperasi dan mencetak struk meskipun koneksi internet terputus, serta secara otomatis melakukan sinkronisasi data ke *cloud* saat jaringan kembali stabil.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+---
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## ✨ Fitur Utama
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- 🌐 **Arsitektur Offline-First:** Transaksi kasir tidak akan terhenti oleh gangguan internet. Data disimpan secara aman di memori lokal (IndexedDB) dan disinkronkan ke server secara otomatis di latar belakang.
+- 🔐 **Role-Based Access Control (RBAC):** Pemisahan hak akses dan wewenang yang tegas antara **Owner** (Pemilik), **Manager** (Manajer Cabang), dan **Cashier** (Kasir)[cite: 42].
+- 🏢 **Manajemen Multi-Usaha & Cabang:** Satu akun pemilik dapat mengelola berbagai entitas bisnis (tenant) dan puluhan cabang fisik secara terpusat[cite: 42].
+- 📦 **Master Inventory & Transfer Logistik:** Pantau stok *real-time*, dapatkan peringatan stok menipis, dan lakukan pemindahan/transfer barang antar-cabang secara sistematis[cite: 42].
+- 📈 **Dasbor Analitik Bisnis:** Visualisasi tren pendapatan harian/bulanan, deteksi jam sibuk kasir, dan identifikasi produk terlaris (*Fast-Moving* vs *Slow-Moving*)[cite: 42].
+- ⚖️ **Akuntansi Otomatis (Standar SAK EMKM):** Setiap transaksi POS dan pencatatan pengeluaran otomatis dijurnal (*double-entry*). Sistem langsung menyajikan Laporan Laba Rugi dan Laporan Posisi Keuangan (Neraca) yang seimbang[cite: 42].
+- 🧾 **Struk Digital & Integrasi WhatsApp:** Cetak struk dalam format PDF atau kirimkan langsung ke WhatsApp pelanggan[cite: 42].
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## 🛠️ Teknologi yang Digunakan
 
-To learn more about Next.js, take a look at the following resources:
+- **Framework Front-end:** [Next.js (App Router)](https://nextjs.org/) & React.
+- **Backend & Database Cloud:** [Supabase](https://supabase.com/) (PostgreSQL & Supabase Auth).
+- **Database Lokal (Offline):** [Dexie.js](https://dexie.org/) (IndexedDB wrapper).
+- **Service Worker / PWA:** [Serwist](https://serwist.build/).
+- **State Management:** Zustand.
+- **Styling & UI:** Tailwind CSS v4 & Lucide React (Icons).
+- **Visualisasi Data:** Recharts.
+- **PDF Generator:** jsPDF & jsPDF-AutoTable.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
